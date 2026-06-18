@@ -117,3 +117,12 @@ flutter test         # 전부 통과여야 함
 - **원인**: 원격 컨테이너 기본 이미지에 SDK 미포함.
 - **해결**: Flutter SDK(stable) 다운로드·압축 해제 후 PATH 설정해 analyze/test 수행.
 - **재발 방지**: 세션 시작 시 SDK 가용성 확인. 실기기 검증은 별도 환경 필요.
+
+### 9.8 Android minSdk가 ffmpeg 요구치 미달
+- **증상**: Android 빌드 시 `ffmpeg_kit_flutter_new`가 요구하는 minSdk 미달로 manifest 병합 실패
+  ("uses-sdk:minSdkVersion ... cannot be smaller than version 24 declared in library").
+- **원인**: `android/app/build.gradle`의 `minSdk = flutter.minSdkVersion`(기본 21)이
+  ffmpeg 라이브러리 요구치(24)보다 낮음.
+- **해결**: `minSdk = 24`로 고정.
+- **재발 방지**: 네이티브 바이너리 의존성 추가 시 각 라이브러리의 minSdk 요구치를 확인하고
+  `app/build.gradle`에 명시적으로 반영.
