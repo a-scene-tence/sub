@@ -118,6 +118,18 @@ flutter test         # 전부 통과여야 함
 - **해결**: Flutter SDK(stable) 다운로드·압축 해제 후 PATH 설정해 analyze/test 수행.
 - **재발 방지**: 세션 시작 시 SDK 가용성 확인. 실기기 검증은 별도 환경 필요.
 
+### 9.9 `ffmpeg_kit_flutter_new` 1.x Android 컴파일 실패(심볼 누락)
+- **증상**: `flutter build apk`에서 `ffmpeg_kit_flutter_android-1.7.0` 컴파일 중
+  `cannot find symbol: MediaInformationSession/MediaInformation/FFmpegKitConfig` 등 194개 에러.
+  (`analyze`/`test`는 통과 → Dart 코드 문제 아님, 네이티브 의존성 문제.)
+- **원인**: 1.x가 끌어오는 android 플러그인이 원본 arthenica AAR 바이너리에 의존하는데
+  해당 바이너리가 Maven에서 제거되어 클래스 미해결.
+- **해결**: `ffmpeg_kit_flutter_new`를 **4.2.1**로 상향(`^4.2.1`). Dart API
+  (`executeWithArguments`/`getReturnCode`/`ReturnCode.isSuccess`/`getAllLogsAsString`)는 동일하게 동작.
+  요구사항: Android API 24+(충족), **Kotlin 1.8.22+**(현재 settings.gradle 1.8.22 충족).
+- **재발 방지**: 네이티브 바이너리 의존 패키지는 **유지보수 중인 최신 메이저**를 사용하고,
+  CI에서 `flutter build apk`까지 돌려 네이티브 컴파일을 검증한다(analyze/test만으론 불충분).
+
 ### 9.8 Android minSdk가 ffmpeg 요구치 미달
 - **증상**: Android 빌드 시 `ffmpeg_kit_flutter_new`가 요구하는 minSdk 미달로 manifest 병합 실패
   ("uses-sdk:minSdkVersion ... cannot be smaller than version 24 declared in library").

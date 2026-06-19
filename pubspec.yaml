@@ -16,7 +16,8 @@ dependencies:
   # 로컬 영상 파일 선택
   file_picker: ^8.1.4
   # 오디오 추출 (ffmpeg_kit_flutter는 폐기됨 -> 유지보수 포크 사용)
-  ffmpeg_kit_flutter_new: ^1.6.1
+  # 1.x 의 android AAR 은 원본 바이너리 제거로 컴파일 실패 -> 4.x 사용
+  ffmpeg_kit_flutter_new: ^4.2.1
   # HTTP (Google Cloud REST)
   http: ^1.2.2
   # 상태 관리
