@@ -76,6 +76,21 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.13 릴리스 APK에서 모든 네이티브 플러그인 미등록(MissingPluginException)
+- **증상**: 빌드 #5 진단 노출 결과 키 저장 시 secure_storage(MissingPluginException),
+  shared_preferences(PlatformException channel-error), path_provider(디렉터리 조회 실패)가
+  **동시에** 실패. 서로 다른 저자의 독립 플러그인 3종이 모두 "채널에 핸들러 없음".
+- **원인**: 개별 플러그인 버그가 아니라 **릴리스 APK에서 네이티브 플러그인이 FlutterEngine에
+  attach되지 않음** = `GeneratedPluginRegistrant.registerWith(engine)`가 UI 엔진에 대해
+  호출되지 않음. Android 구성은 표준·정상(settings.gradle flutter-plugin-loader, app build.gradle
+  flutter-gradle-plugin, MainActivity=FlutterActivity, flutterEmbedding=2, 생성 registrant에
+  7개 플러그인 포함, 네이티브 lib 포함, CI 무에러)인데도 리플렉션 기반 자동 등록이 누락됨.
+- **해결**: `MainActivity.configureFlutterEngine()`를 오버라이드해
+  `GeneratedPluginRegistrant.registerWith(flutterEngine)`를 **명시적으로 호출**. 자동 등록이
+  동작한 경우에도 중복 add는 엔진 레지스트리가 무시하므로 멱등·무해.
+- **재발 방지**: 여러 네이티브 플러그인이 일제히 "채널 핸들러 없음/connection 불가"면 개별
+  버그가 아니라 **플러그인 등록 자체**를 우선 의심한다. v2 임베딩이라도 명시 등록을 둬 안전망 확보.
+
 ### 9.12 secure storage + 파일 폴백 동시 실패, 실제 예외가 가려짐
 - **증상**: 9.11 수정(타임아웃 + 파일 폴백) APK에서 버튼 멈춤은 해소됐으나, 키 저장 시
   "키 저장 실패: Exception: 보안 저장소와 폴백 저장소를 모두 사용할 수 없습니다." 표시.
