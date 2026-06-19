@@ -72,6 +72,18 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.10 설정 화면 API 키 저장이 "저장 중…"에서 무한 대기
+- **증상**: 실기기 release APK에서 API 키 입력 후 "키 저장" 클릭 시 버튼이 "저장 중…"
+  상태로 멈추고, 위쪽 "키가 설정되지 않았습니다" 문구도 바뀌지 않음.
+- **원인**: `settings_screen.dart`의 `_saveKey()`가 `await secretsProvider.setApiKey(key)`
+  (flutter_secure_storage 쓰기)를 **try-catch 없이** 호출. 기기에서 secure storage 쓰기가
+  예외를 던지면(Android Keystore 접근 실패 등) `setState(() => _saving = false)`가 실행되지
+  않아 버튼이 영구히 비활성 상태로 남고, 사용자는 어떤 오류인지 전혀 알 수 없음.
+- **해결**: `try/catch/finally`로 감싸 실패 시 스낵바로 실제 예외 메시지를 노출하고,
+  `finally`에서 `_saving`을 항상 복구.
+- **재발 방지**: 플러그인(secure storage 등 플랫폼 채널) 호출은 항상 try-catch로 감싸고,
+  실패를 사용자에게 보이는 형태로 노출한다. "저장 중…" 류 로딩 상태는 반드시 finally에서 해제.
+
 ### 9.1 `ffmpeg_kit_flutter` 의존성 해석 실패(폐기됨)
 - **증상**: 원본 패키지가 2025년 폐기되어 바이너리(Maven/CocoaPods) 제거, 설치 불가.
 - **원인**: 저자가 프로젝트 아카이브, 릴리스 바이너리 내림.

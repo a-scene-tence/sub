@@ -26,14 +26,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
     setState(() => _saving = true);
-    await ref.read(secretsProvider).setApiKey(key);
-    ref.invalidate(apiKeyProvider);
-    if (!mounted) return;
-    setState(() => _saving = false);
-    _keyController.clear();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('API 키를 저장했습니다.')),
-    );
+    try {
+      await ref.read(secretsProvider).setApiKey(key);
+      ref.invalidate(apiKeyProvider);
+      if (!mounted) return;
+      _keyController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('API 키를 저장했습니다.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('키 저장 실패: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
