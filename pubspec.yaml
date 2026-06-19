@@ -25,6 +25,8 @@ dependencies:
   # 환경변수 / 비밀 관리
   flutter_dotenv: ^5.2.1
   flutter_secure_storage: ^9.2.2
+  # secure storage 불가 기기 대비 가장 호환성 높은 폴백 저장소(keystore 비의존)
+  shared_preferences: ^2.3.2
   # 임시 디렉터리
   path_provider: ^2.1.5
   path: ^1.9.0

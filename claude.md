@@ -27,9 +27,10 @@
 - **API 키·비밀을 절대 커밋하지 않는다.** `.env`, 서비스계정 JSON, 키스토어는 `.gitignore`에 포함.
 - 키는 **로그·예외 메시지·UI에 노출하지 않는다**(예외 메시지 작성 시 키 문자열 미포함 확인).
 - 런타임 키는 `flutter_secure_storage`에 저장. 빌드 시 키는 `.env`(로컬, 커밋 금지).
-- keystore 불가/무한대기 기기(9.11)에서는 **앱 전용(샌드박스) 평문 파일**로 폴백 저장한다.
-  외부 앱은 접근 불가하나 루팅/디바이스 백업 시 노출 위험이 있어 **MVP 데모 한정**이며,
-  Cloud Console 키 제한(API 종류 + 앱 ID/SHA-1)을 전제로 한다.
+- keystore 불가/무한대기 기기(9.11, 9.12)에서는 **SharedPreferences / 앱 전용(샌드박스)
+  평문 파일**로 폴백 저장한다. 둘 다 앱 샌드박스라 외부 앱 접근은 불가하나 루팅/디바이스
+  백업 시 노출 위험이 있어 **MVP 데모 한정**이며, Cloud Console 키 제한(API 종류 +
+  앱 ID/SHA-1)을 전제로 한다.
 - 모바일 바이너리의 키는 추출 가능 → Cloud Console에서 **API 종류 + 앱 ID/SHA-1로 제한**.
 - 프로덕션은 백엔드 프록시로 키를 숨기는 것이 원칙(MVP는 데모 한정, 위험 문서화).
 
@@ -74,6 +75,21 @@ flutter test         # 전부 통과여야 함
 ## 9. 버그/오류 로그
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
+
+### 9.12 secure storage + 파일 폴백 동시 실패, 실제 예외가 가려짐
+- **증상**: 9.11 수정(타임아웃 + 파일 폴백) APK에서 버튼 멈춤은 해소됐으나, 키 저장 시
+  "키 저장 실패: Exception: 보안 저장소와 폴백 저장소를 모두 사용할 수 없습니다." 표시.
+  즉 secure storage도, `getApplicationSupportDirectory()` 파일 폴백도 이 기기에서 실패.
+- **원인**: Android 스캐폴딩(MainActivity=FlutterActivity v2, manifest flutterEmbedding=2,
+  R8 비활성, GeneratedPluginRegistrant 정상 등록)은 정상 → MissingPluginException(등록
+  누락)이 아니라 **기기별 실제 런타임 예외**. 그런데 코드가 그 예외 타입/메시지를 버리고
+  일반 문구만 보여줘 원인 특정 불가.
+- **해결**: (1) keystore/디렉터리에 비의존적인 **SharedPreferences** 저장 계층 추가
+  (secure storage → SharedPreferences → 파일 순). (2) 파일 폴백 디렉터리를
+  support→documents→temp 후보로 다중화. (3) 전부 실패 시 각 계층의 **실제 예외
+  타입+짧은 메시지**(키 미포함, 120자 제한)를 모아 던져 스낵바로 노출.
+- **재발 방지**: 폴백은 "성공/실패"만 반환하지 말고 **실패 원인 자체를 표면화**해야 진단
+  가능하다. 영속 데이터는 단일 native 플러그인에 의존하지 말고 가장 호환성 높은 계층을 둔다.
 
 ### 9.11 secure storage write/read가 예외 없이 무한 대기(기기별)
 - **증상**: 실기기에서 "키 저장" 후 버튼이 "저장 중…"에서 멈추고, 9.10의 try-catch를 적용한
