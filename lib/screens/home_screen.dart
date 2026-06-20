@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/diagnostics.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
 
@@ -15,6 +16,35 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final TextEditingController _urlController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 직전 실행이 비정상 종료(네이티브 크래시 등)했다면 마지막 브레드크럼을 표면화한다.
+    // 정상 완료 시 파이프라인이 clear() 하므로, 배너는 멈춘 적이 있을 때만 뜬다.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showLastCrumb());
+  }
+
+  Future<void> _showLastCrumb() async {
+    final crumb = await Diagnostics.read();
+    if (crumb == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        content: Text('이전 실행 기록: $crumb'),
+        leading: const Icon(Icons.history),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              Diagnostics.clear();
+            },
+            child: const Text('닫기'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {

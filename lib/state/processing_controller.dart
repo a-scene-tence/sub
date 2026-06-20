@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/subtitle_cue.dart';
 import '../services/audio_extraction_service.dart';
 import '../services/cue_builder.dart';
+import '../services/diagnostics.dart';
 import '../services/speech_service.dart';
 
 /// 자막 생성 파이프라인의 진행 단계.
@@ -78,14 +79,21 @@ class ProcessingController extends ValueNotifier<ProcessingState> {
     File? extracted;
     try {
       value = const ProcessingState(status: ProcessingStatus.extracting);
+      await Diagnostics.record('pipe: 오디오 추출 시작');
       extracted = await _audio.extractWav(videoPath);
+      await Diagnostics.record('pipe: 오디오 추출 완료');
       final bytes = await extracted.readAsBytes();
 
       value = value.copyWith(status: ProcessingStatus.recognizing);
+      await Diagnostics.record('pipe: STT 시작 (${bytes.length}B)');
       final recognition =
           await _speech.recognize(bytes, languageHint: languageHint);
+      await Diagnostics.record('pipe: STT 완료 '
+          '(${recognition.segments.length}seg, '
+          '${recognition.detectedLanguageCode})');
 
       if (recognition.isEmpty) {
+        await Diagnostics.record('pipe: 무음/미인식');
         value = const ProcessingState(
           status: ProcessingStatus.error,
           errorMessage: '음성을 인식하지 못했습니다(무음이거나 지원하지 않는 언어).',
@@ -97,6 +105,7 @@ class ProcessingController extends ValueNotifier<ProcessingState> {
         status: ProcessingStatus.translating,
         detectedLanguage: recognition.detectedLanguageCode,
       );
+      await Diagnostics.record('pipe: 번역/큐 생성 시작 (target=$targetLanguage)');
       final cues = await _cueBuilder.build(
         recognition,
         targetLanguage: targetLanguage,
@@ -107,7 +116,11 @@ class ProcessingController extends ValueNotifier<ProcessingState> {
         cues: cues,
         detectedLanguage: recognition.detectedLanguageCode,
       );
+      await Diagnostics.record('pipe: 완료 (${cues.length} cues)');
+      // 정상 완료 → 브레드크럼 삭제(다음 실행에서 오탐 방지).
+      await Diagnostics.clear();
     } catch (e) {
+      await Diagnostics.record('pipe: 예외: $e');
       value = ProcessingState(
         status: ProcessingStatus.error,
         errorMessage: e.toString(),

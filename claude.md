@@ -76,6 +76,19 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.14 자막 파이프라인이 네이티브 크래시로 조용히 종료, 멈춘 단계 불명
+- **증상**: 영상 처리 중 앱이 죽거나 멈추는데, 어느 단계(오디오 추출/STT/번역)에서 멈췄는지
+  알 수 없음. FFmpegKit 추출·대용량 오디오 STT 구간은 Dart `catch`로 잡히지 않는 네이티브
+  크래시(SIGSEGV/OOM)가 가능해 `ProcessingIndicator`의 `e.toString()`도 못 띄움.
+- **원인**: `Diagnostics` 유틸은 있었으나 파이프라인 계측이 없었고(`processing_controller.dart`가
+  `diagnostics.dart`를 import만 하고 미사용), `Diagnostics.read()`/`clear()`도 어디서도 호출되지
+  않아 브레드크럼이 사용자에게 표면화되지 않았음.
+- **해결**: `process()` 각 단계 직전/직후 `Diagnostics.record('pipe: ...')` 추가 + 정상 완료 시
+  `Diagnostics.clear()`. `HomeScreen.initState`의 post-frame에서 `Diagnostics.read()` →
+  값이 있으면 dismissible `MaterialBanner('이전 실행 기록: ...')`로 표시(`닫기`가 `clear()`).
+- **재발 방지**: 위험한 네이티브 호출 구간은 직전 브레드크럼을 남겨 "어디까지 갔나"를 디스크에
+  보존하고, 정상 경로에서만 clear해 다음 실행 배너가 "비정상 종료 시"에만 뜨게 한다.
+
 ### 9.13 릴리스 APK에서 모든 네이티브 플러그인 미등록(MissingPluginException)
 - **증상**: 빌드 #5 진단 노출 결과 키 저장 시 secure_storage(MissingPluginException),
   shared_preferences(PlatformException channel-error), path_provider(디렉터리 조회 실패)가
