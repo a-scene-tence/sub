@@ -4,7 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:video_subtitle_translator/models/recognition_result.dart';
+import 'package:video_subtitle_translator/models/transcript_segment.dart';
 import 'package:video_subtitle_translator/services/speech_service.dart';
+import 'package:video_subtitle_translator/services/wav_chunker.dart'
+    show buildWavHeader;
 
 void main() {
   group('parseRecognizeResponse', () {
@@ -85,6 +89,45 @@ void main() {
       expect(wavChannels(<int>[1, 2, 3]), isNull);
       final notRiff = List<int>.filled(44, 0);
       expect(wavSampleRate(notRiff), isNull);
+    });
+  });
+
+  group('ChunkedSpeechRecognizer', () {
+    test('다청크: 청크별 호출 + 타임스탬프 오프셋 병합', () async {
+      // 16kHz mono 16-bit = 32000 B/s. 3초 = 96000B. 1초 청크 → 3조각.
+      final wav = <int>[
+        ...buildWavHeader(sampleRate: 16000, channels: 1, dataLength: 96000),
+        ...List<int>.filled(96000, 0),
+      ];
+      final base = _FakeBase();
+      final rec =
+          ChunkedSpeechRecognizer(base, chunkDuration: const Duration(seconds: 1));
+
+      final result = await rec.recognize(wav, languageHint: 'en-US');
+
+      expect(base.calls, 3);
+      expect(result.segments.length, 3);
+      // 각 청크의 0.5s 세그먼트가 i초만큼 밀려 병합된다.
+      expect(result.segments[0].start, const Duration(milliseconds: 500));
+      expect(result.segments[1].start, const Duration(milliseconds: 1500));
+      expect(result.segments[2].start, const Duration(milliseconds: 2500));
+      expect(result.detectedLanguageCode, 'en-US');
+    });
+
+    test('단일 청크(짧은 입력)는 base에 원본 그대로 위임', () async {
+      final wav = <int>[
+        ...buildWavHeader(sampleRate: 16000, channels: 1, dataLength: 1000),
+        ...List<int>.filled(1000, 0),
+      ];
+      final base = _FakeBase();
+      final rec = ChunkedSpeechRecognizer(base,
+          chunkDuration: const Duration(seconds: 50));
+
+      final result = await rec.recognize(wav);
+
+      expect(base.calls, 1);
+      expect(base.receivedLengths.single, wav.length); // 분할 없음
+      expect(result.segments.single.start, const Duration(milliseconds: 500));
     });
   });
 
@@ -173,6 +216,32 @@ void main() {
       );
     });
   });
+}
+
+/// 청크마다 0.5s~1.0s 세그먼트 하나를 돌려주는 가짜 STT. 호출 인자를 기록한다.
+class _FakeBase implements SpeechService {
+  int calls = 0;
+  final List<int> receivedLengths = <int>[];
+
+  @override
+  Future<RecognitionResult> recognize(
+    List<int> audioBytes, {
+    String? languageHint,
+  }) async {
+    receivedLengths.add(audioBytes.length);
+    final i = calls++;
+    return RecognitionResult(
+      segments: <TranscriptSegment>[
+        TranscriptSegment(
+          start: const Duration(milliseconds: 500),
+          end: const Duration(seconds: 1),
+          text: 'seg$i',
+          languageCode: 'en-US',
+        ),
+      ],
+      detectedLanguageCode: 'en-US',
+    );
+  }
 }
 
 /// 테스트용 최소 PCM WAV 헤더(44바이트) + 16바이트 더미 데이터 생성.

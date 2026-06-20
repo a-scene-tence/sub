@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/app_config.dart';
 import '../providers.dart';
 import '../services/language_codes.dart';
+import '../state/settings_controller.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -120,8 +121,156 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: settings.setShowSource,
             contentPadding: EdgeInsets.zero,
           ),
+          const Divider(height: 40),
+          const Text('자막 스타일', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          _StylePreview(settings: current),
+          const SizedBox(height: 16),
+          Text('글자 크기: ${current.subtitleFontSize.round()}'),
+          Slider(
+            value: current.subtitleFontSize.clamp(14, 36),
+            min: 14,
+            max: 36,
+            divisions: 22,
+            label: current.subtitleFontSize.round().toString(),
+            onChanged: settings.setSubtitleFontSize,
+          ),
+          const SizedBox(height: 8),
+          const Text('글자색'),
+          const SizedBox(height: 8),
+          _ColorSwatchRow(
+            colors: _textColors,
+            selected: current.subtitleTextColor,
+            onSelected: settings.setSubtitleTextColor,
+          ),
+          const SizedBox(height: 16),
+          const Text('배경색'),
+          const SizedBox(height: 8),
+          _ColorSwatchRow(
+            colors: _bgColors,
+            selected: current.subtitleBgColor,
+            onSelected: settings.setSubtitleBgColor,
+          ),
+          const SizedBox(height: 16),
+          Text('배경 투명도: ${(current.subtitleBgOpacity * 100).round()}%'),
+          Slider(
+            value: current.subtitleBgOpacity.clamp(0, 1),
+            divisions: 20,
+            label: '${(current.subtitleBgOpacity * 100).round()}%',
+            onChanged: settings.setSubtitleBgOpacity,
+          ),
         ],
       ),
+    );
+  }
+}
+
+/// 글자색 프리셋(흰/노랑/하늘/연두/주황/검정).
+const List<Color> _textColors = <Color>[
+  Color(0xFFFFFFFF),
+  Color(0xFFFFEB3B),
+  Color(0xFF40C4FF),
+  Color(0xFF69F0AE),
+  Color(0xFFFF9800),
+  Color(0xFF000000),
+];
+
+/// 배경색 프리셋(검정/짙은회색/남색/적갈색/흰색).
+const List<Color> _bgColors = <Color>[
+  Color(0xFF000000),
+  Color(0xFF424242),
+  Color(0xFF1A237E),
+  Color(0xFF3E2723),
+  Color(0xFFFFFFFF),
+];
+
+/// 현재 자막 스타일 미리보기.
+class _StylePreview extends StatelessWidget {
+  const _StylePreview({required this.settings});
+
+  final AppSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        // 영상 위 느낌을 주기 위한 회색 바탕.
+        color: Colors.grey.shade700,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: settings.subtitleBgColor
+              .withValues(alpha: settings.subtitleBgOpacity),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          '자막 미리보기 예시',
+          style: TextStyle(
+            color: settings.subtitleTextColor,
+            fontSize: settings.subtitleFontSize,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 원형 색상 스와치 선택 행.
+class _ColorSwatchRow extends StatelessWidget {
+  const _ColorSwatchRow({
+    required this.colors,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<Color> colors;
+  final Color selected;
+  final ValueChanged<Color> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: <Widget>[
+        for (final c in colors)
+          Builder(builder: (context) {
+            final isSelected = c == selected;
+            return InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => onSelected(c),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade400,
+                    width: isSelected ? 3 : 1,
+                  ),
+                ),
+                child: isSelected
+                    ? Icon(
+                        Icons.check,
+                        size: 18,
+                        color: c.computeLuminance() > 0.5
+                            ? Colors.black
+                            : Colors.white,
+                      )
+                    : null,
+              ),
+            );
+          }),
+      ],
     );
   }
 }

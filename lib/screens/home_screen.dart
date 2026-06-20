@@ -101,7 +101,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'MVP는 60초 이하 클립을 권장합니다.',
+              '긴 영상도 지원합니다. 다만 영상이 길수록 인식·번역 처리 시간이 늘어납니다.',
               style: TextStyle(fontSize: 13, color: Colors.grey),
             ),
             const SizedBox(height: 32),

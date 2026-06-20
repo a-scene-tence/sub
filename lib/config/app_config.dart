@@ -21,8 +21,10 @@ class AppConfig {
   static const int sampleRateHertz = 16000;
   static const int audioChannels = 1;
 
-  // --- MVP 제약: 인라인 STT는 60초 한도 ---
-  static const Duration maxInlineClipDuration = Duration(seconds: 60);
+  // --- 긴 영상: 동기 STT(≤60초/10MB)를 우회하려 WAV를 청크로 분할 ---
+  /// Google 동기 인식 한도(60초)보다 작게 잡은 청크 길이(안전 여유 + 10MB 한도 회피).
+  /// 50초·48kHz mono 16-bit ≈ 4.8MB(base64 ≈ 6.4MB) < 10MB.
+  static const Duration sttChunkDuration = Duration(seconds: 50);
 
   // --- 자막 세그먼트 그룹화 규칙 ---
   /// 한 자막 큐의 최대 글자 수(가독성).

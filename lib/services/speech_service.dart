@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/recognition_result.dart';
 import '../models/transcript_segment.dart';
+import 'wav_chunker.dart';
 
 /// STT 호출 실패를 나타내는 예외(메시지에 API 키를 포함하지 않는다).
 class SpeechException implements Exception {
@@ -91,6 +92,53 @@ class GoogleSpeechService implements SpeechService {
       }
     } catch (_) {/* ignore */}
     return '응답을 해석할 수 없음';
+  }
+}
+
+/// 긴 영상 지원: 동기 `recognize`(≤60초/10MB)를 우회하기 위해 WAV를 고정 길이 청크로
+/// 잘라 [base]로 청크별 인식한 뒤, 타임스탬프를 청크 오프셋만큼 밀어 하나로 병합한다.
+///
+/// API 키 인증을 그대로 유지하며(GCS/longRunning 불필요), 짧은 클립은 1청크로 [base]에
+/// 그대로 위임한다. 청크는 순차 호출이라 영상이 길수록 처리 시간·비용이 비례해 늘어난다
+/// (추후 병렬화 여지). 청크 경계에서 단어 하나가 잘릴 수 있으나 자막 용도에선 허용 수준.
+class ChunkedSpeechRecognizer implements SpeechService {
+  ChunkedSpeechRecognizer(this.base, {Duration? chunkDuration})
+      : chunkDuration = chunkDuration ?? AppConfig.sttChunkDuration;
+
+  final SpeechService base;
+  final Duration chunkDuration;
+
+  @override
+  Future<RecognitionResult> recognize(
+    List<int> audioBytes, {
+    String? languageHint,
+  }) async {
+    final chunks = splitWav(audioBytes, chunk: chunkDuration);
+    if (chunks.length <= 1) {
+      return base.recognize(audioBytes, languageHint: languageHint);
+    }
+
+    final merged = <TranscriptSegment>[];
+    final langCounts = <String, int>{};
+    for (final chunk in chunks) {
+      final r = await base.recognize(chunk.bytes, languageHint: languageHint);
+      for (final s in r.segments) {
+        merged.add(s.copyWith(
+          start: s.start + chunk.offset,
+          end: s.end + chunk.offset,
+        ));
+      }
+      final lang = r.detectedLanguageCode;
+      if (lang.isNotEmpty) {
+        langCounts[lang] = (langCounts[lang] ?? 0) + r.segments.length;
+      }
+    }
+
+    if (merged.isEmpty) return RecognitionResult.empty;
+    final detected = langCounts.isEmpty
+        ? ''
+        : langCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    return RecognitionResult(segments: merged, detectedLanguageCode: detected);
   }
 }
 

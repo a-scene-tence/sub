@@ -7,6 +7,8 @@ import 'package:video_player/video_player.dart';
 import '../providers.dart';
 import '../state/player_controller.dart';
 import '../state/processing_controller.dart';
+import '../state/settings_controller.dart';
+import '../widgets/player_controls.dart';
 import '../widgets/processing_indicator.dart';
 import '../widgets/subtitle_overlay.dart';
 import 'settings_screen.dart';
@@ -122,55 +124,68 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
         ],
       ),
-      body: Center(
-        child: _initFailed
-            ? Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _initError ?? '오류',
-                  style: const TextStyle(color: Colors.white),
-                  textAlign: TextAlign.center,
+      body: _buildBody(controller, processingState, settings),
+    );
+  }
+
+  Widget _buildBody(
+    VideoPlayerController? controller,
+    ProcessingState processingState,
+    AppSettings settings,
+  ) {
+    if (_initFailed) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _initError ?? '오류',
+            style: const TextStyle(color: Colors.white),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    if (controller == null || !controller.value.isInitialized) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    final bgColor = settings.subtitleBgColor
+        .withValues(alpha: settings.subtitleBgOpacity);
+
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: Center(
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                AspectRatio(
+                  aspectRatio: controller.value.aspectRatio,
+                  child: VideoPlayer(controller),
                 ),
-              )
-            : (controller == null || !controller.value.isInitialized)
-                ? const CircularProgressIndicator(color: Colors.white)
-                : Stack(
-                    alignment: Alignment.center,
-                    children: <Widget>[
-                      AspectRatio(
-                        aspectRatio: controller.value.aspectRatio,
-                        child: VideoPlayer(controller),
-                      ),
-                      Positioned.fill(
-                        child: ValueListenableBuilder(
-                          valueListenable: _player.activeCue,
-                          builder: (context, cue, _) => SubtitleOverlay(
-                            cue: cue,
-                            showSource: settings.showSource,
-                          ),
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: ProcessingIndicator(state: processingState),
-                      ),
-                    ],
+                Positioned.fill(
+                  child: ValueListenableBuilder(
+                    valueListenable: _player.activeCue,
+                    builder: (context, cue, _) => SubtitleOverlay(
+                      cue: cue,
+                      showSource: settings.showSource,
+                      fontSize: settings.subtitleFontSize,
+                      textColor: settings.subtitleTextColor,
+                      backgroundColor: bgColor,
+                    ),
                   ),
-      ),
-      floatingActionButton:
-          (controller != null && controller.value.isInitialized)
-              ? FloatingActionButton(
-                  onPressed: () {
-                    setState(() {
-                      controller.value.isPlaying
-                          ? controller.pause()
-                          : controller.play();
-                    });
-                  },
-                  child: Icon(
-                    controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                  ),
-                )
-              : null,
+                ),
+                Positioned.fill(
+                  child: ProcessingIndicator(state: processingState),
+                ),
+              ],
+            ),
+          ),
+        ),
+        PlayerControls(controller: controller),
+      ],
     );
   }
 }
