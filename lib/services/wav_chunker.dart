@@ -22,13 +22,11 @@ class WavInfo {
   int get bytesPerSecond => sampleRate * channels * 2;
 }
 
-/// 분할된 한 청크: 독립 재생 가능한 WAV 바이트 + 원본 기준 시작 오프셋.
-class WavChunk {
-  const WavChunk({required this.bytes, required this.offset});
-
-  final List<int> bytes;
-  final Duration offset;
-}
+/// 한 청크의 경계 계획(바이트를 담지 않는다 — 디스크에서 필요 시 읽기 위함).
+///
+/// [dataStart]는 데이터 영역 내 상대 오프셋(파일 절대 오프셋은 `dataOffset + dataStart`),
+/// [length]는 읽을 PCM 바이트 수, [offset]은 원본 기준 청크 시작 시각.
+typedef ChunkPlan = ({int dataStart, int length, Duration offset});
 
 const int _headerSize = 44;
 
@@ -77,52 +75,43 @@ WavInfo? readWavInfo(List<int> bytes) {
   return null;
 }
 
-/// [wav]를 [chunk] 길이 단위로 잘라 각각 독립 WAV 바이트로 만든다.
+/// 데이터 영역을 [chunk] 길이 단위로 나눈 **경계 목록**을 계산한다(바이트는 담지 않음).
 ///
-/// WAV로 파싱되지 않으면(테스트용 더미 등) 원본 그대로 1청크로 반환한다. 청크 경계는
-/// 16-bit 샘플 프레임(`channels*2`바이트)에 정렬해 샘플이 쪼개지지 않게 한다.
-List<WavChunk> splitWav(List<int> wav, {required Duration chunk}) {
-  final info = readWavInfo(wav);
-  if (info == null || chunk <= Duration.zero) {
-    return <WavChunk>[WavChunk(bytes: wav, offset: Duration.zero)];
-  }
+/// 호출자가 각 [ChunkPlan]에 대해 디스크에서 `[dataStart, dataStart+length)` 구간만 읽어
+/// 메모리 안전하게 처리하도록 한다. [totalDataBytes]는 데이터 영역의 실제 바이트 수
+/// (파일 길이 - `dataOffset`). 청크 경계는 16-bit 샘플 프레임(`channels*2`)에 정렬한다.
+List<ChunkPlan> planChunks(
+  WavInfo info, {
+  required int totalDataBytes,
+  required Duration chunk,
+}) {
+  if (totalDataBytes <= 0) return const <ChunkPlan>[];
 
   final frameBytes = info.channels * 2;
-  int chunkBytes = info.bytesPerSecond * chunk.inMilliseconds ~/ 1000;
-  // 프레임 정렬 + 최소 1프레임.
-  chunkBytes -= chunkBytes % frameBytes;
-  if (chunkBytes < frameBytes) chunkBytes = frameBytes;
-
-  final dataStart = info.dataOffset;
-  final dataEnd = info.dataOffset + info.dataLength;
-  if (dataEnd - dataStart <= chunkBytes) {
-    return <WavChunk>[WavChunk(bytes: wav, offset: Duration.zero)];
+  if (chunk <= Duration.zero) {
+    return <ChunkPlan>[
+      (dataStart: 0, length: totalDataBytes, offset: Duration.zero),
+    ];
   }
 
-  final chunks = <WavChunk>[];
-  var pos = dataStart;
+  int chunkBytes = info.bytesPerSecond * chunk.inMilliseconds ~/ 1000;
+  chunkBytes -= chunkBytes % frameBytes; // 프레임 정렬
+  if (chunkBytes < frameBytes) chunkBytes = frameBytes;
+
+  final plans = <ChunkPlan>[];
+  var pos = 0;
   var index = 0;
-  while (pos < dataEnd) {
-    final end = (pos + chunkBytes) > dataEnd ? dataEnd : pos + chunkBytes;
-    final pcm = wav.sublist(pos, end);
-    chunks.add(WavChunk(
-      bytes: _wrapWav(pcm, info.sampleRate, info.channels),
+  while (pos < totalDataBytes) {
+    final end = (pos + chunkBytes) > totalDataBytes ? totalDataBytes : pos + chunkBytes;
+    plans.add((
+      dataStart: pos,
+      length: end - pos,
       offset: Duration(milliseconds: index * chunk.inMilliseconds),
     ));
     pos = end;
     index++;
   }
-  return chunks;
-}
-
-/// PCM 데이터에 표준 44바이트 16-bit WAV 헤더를 붙여 완전한 WAV 바이트를 만든다.
-List<int> _wrapWav(List<int> pcm, int sampleRate, int channels) {
-  final header = buildWavHeader(
-    sampleRate: sampleRate,
-    channels: channels,
-    dataLength: pcm.length,
-  );
-  return <int>[...header, ...pcm];
+  return plans;
 }
 
 /// 표준 44바이트 16-bit PCM WAV(RIFF/`fmt `/`data`) 헤더를 생성한다.

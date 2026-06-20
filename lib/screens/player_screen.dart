@@ -184,7 +184,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             ),
           ),
         ),
-        PlayerControls(controller: controller),
+        // 하단 시스템 내비게이션 바와 겹치지 않도록 인셋을 확보한다.
+        SafeArea(
+          top: false,
+          child: PlayerControls(controller: controller),
+        ),
       ],
     );
   }

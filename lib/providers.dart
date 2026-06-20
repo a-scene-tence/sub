@@ -26,12 +26,13 @@ final apiKeyProvider = FutureProvider<String?>((ref) {
 final processingControllerFactory =
     Provider<ProcessingController Function(String apiKey)>((ref) {
   return (String apiKey) {
-    // 긴 영상도 지원하도록 동기 STT를 청크 분할 데코레이터로 감싼다(API 키 인증 유지).
-    final speech = ChunkedSpeechRecognizer(GoogleSpeechService(apiKey: apiKey));
+    // 긴 영상도 지원하도록 동기 STT를 파일 스트리밍 청크 인식기로 감싼다(API 키 인증 유지).
+    final recognizer =
+        ChunkedSpeechRecognizer(GoogleSpeechService(apiKey: apiKey));
     final translation = GoogleTranslationService(apiKey: apiKey);
     return ProcessingController(
       audioExtractor: AudioExtractionService(),
-      speechService: speech,
+      recognizer: recognizer,
       cueBuilder: CueBuilder(translation),
     );
   };

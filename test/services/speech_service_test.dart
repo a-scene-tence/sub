@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -92,41 +93,63 @@ void main() {
     });
   });
 
-  group('ChunkedSpeechRecognizer', () {
-    test('다청크: 청크별 호출 + 타임스탬프 오프셋 병합', () async {
-      // 16kHz mono 16-bit = 32000 B/s. 3초 = 96000B. 1초 청크 → 3조각.
-      final wav = <int>[
-        ...buildWavHeader(sampleRate: 16000, channels: 1, dataLength: 96000),
-        ...List<int>.filled(96000, 0),
-      ];
-      final base = _FakeBase();
-      final rec =
-          ChunkedSpeechRecognizer(base, chunkDuration: const Duration(seconds: 1));
+  group('ChunkedSpeechRecognizer.recognizeFile', () {
+    late Directory tmp;
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('rec_test');
+    });
+    tearDown(() async {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
 
-      final result = await rec.recognize(wav, languageHint: 'en-US');
+    Future<File> writeWav(int dataBytes) async {
+      final wav = <int>[
+        ...buildWavHeader(sampleRate: 16000, channels: 1, dataLength: dataBytes),
+        ...List<int>.filled(dataBytes, 0),
+      ];
+      final f = File('${tmp.path}/a.wav');
+      await f.writeAsBytes(wav);
+      return f;
+    }
+
+    test('다청크: 청크별 호출 + 오프셋 병합 + 진행 콜백', () async {
+      // 16kHz mono 16-bit = 32000 B/s. 3초 = 96000B. 1초 청크 → 3조각.
+      final file = await writeWav(96000);
+      final base = _FakeBase();
+      final rec = ChunkedSpeechRecognizer(base,
+          chunkDuration: const Duration(seconds: 1));
+      final progress = <int>[];
+
+      final result = await rec.recognizeFile(
+        file,
+        languageHint: 'en-US',
+        onProgress: (done, total) {
+          expect(total, 3);
+          progress.add(done);
+        },
+      );
 
       expect(base.calls, 3);
+      // 각 청크는 헤더(44) + 32000B PCM = 32044B로 전달된다(메모리 스트리밍).
+      expect(base.receivedLengths, everyElement(44 + 32000));
       expect(result.segments.length, 3);
-      // 각 청크의 0.5s 세그먼트가 i초만큼 밀려 병합된다.
       expect(result.segments[0].start, const Duration(milliseconds: 500));
       expect(result.segments[1].start, const Duration(milliseconds: 1500));
       expect(result.segments[2].start, const Duration(milliseconds: 2500));
       expect(result.detectedLanguageCode, 'en-US');
+      expect(progress, <int>[1, 2, 3]);
     });
 
-    test('단일 청크(짧은 입력)는 base에 원본 그대로 위임', () async {
-      final wav = <int>[
-        ...buildWavHeader(sampleRate: 16000, channels: 1, dataLength: 1000),
-        ...List<int>.filled(1000, 0),
-      ];
+    test('단일 청크(짧은 입력)는 base에 통째로 위임', () async {
+      final file = await writeWav(1000);
       final base = _FakeBase();
       final rec = ChunkedSpeechRecognizer(base,
           chunkDuration: const Duration(seconds: 50));
 
-      final result = await rec.recognize(wav);
+      final result = await rec.recognizeFile(file);
 
       expect(base.calls, 1);
-      expect(base.receivedLengths.single, wav.length); // 분할 없음
+      expect(base.receivedLengths.single, 44 + 1000); // 분할 없이 전체 파일
       expect(result.segments.single.start, const Duration(milliseconds: 500));
     });
   });

@@ -25,12 +25,18 @@ class ProcessingState {
     this.cues = const <SubtitleCue>[],
     this.detectedLanguage,
     this.errorMessage,
+    this.recognizeDone = 0,
+    this.recognizeTotal = 0,
   });
 
   final ProcessingStatus status;
   final List<SubtitleCue> cues;
   final String? detectedLanguage;
   final String? errorMessage;
+
+  /// 인식 진행률(긴 영상 청크 단위). [recognizeTotal]이 0이면 진행률 미표시.
+  final int recognizeDone;
+  final int recognizeTotal;
 
   bool get isBusy =>
       status == ProcessingStatus.extracting ||
@@ -42,12 +48,16 @@ class ProcessingState {
     List<SubtitleCue>? cues,
     String? detectedLanguage,
     String? errorMessage,
+    int? recognizeDone,
+    int? recognizeTotal,
   }) {
     return ProcessingState(
       status: status ?? this.status,
       cues: cues ?? this.cues,
       detectedLanguage: detectedLanguage ?? this.detectedLanguage,
       errorMessage: errorMessage,
+      recognizeDone: recognizeDone ?? this.recognizeDone,
+      recognizeTotal: recognizeTotal ?? this.recognizeTotal,
     );
   }
 }
@@ -59,15 +69,15 @@ class ProcessingState {
 class ProcessingController extends ValueNotifier<ProcessingState> {
   ProcessingController({
     required AudioExtractor audioExtractor,
-    required SpeechService speechService,
+    required AudioRecognizer recognizer,
     required CueBuilder cueBuilder,
   })  : _audio = audioExtractor,
-        _speech = speechService,
+        _recognizer = recognizer,
         _cueBuilder = cueBuilder,
         super(const ProcessingState());
 
   final AudioExtractor _audio;
-  final SpeechService _speech;
+  final AudioRecognizer _recognizer;
   final CueBuilder _cueBuilder;
 
   /// [videoPath]를 처리해 [targetLanguage] 자막 큐를 생성한다.
@@ -82,12 +92,20 @@ class ProcessingController extends ValueNotifier<ProcessingState> {
       await Diagnostics.record('pipe: 오디오 추출 시작');
       extracted = await _audio.extractWav(videoPath);
       await Diagnostics.record('pipe: 오디오 추출 완료');
-      final bytes = await extracted.readAsBytes();
 
       value = value.copyWith(status: ProcessingStatus.recognizing);
-      await Diagnostics.record('pipe: STT 시작 (${bytes.length}B)');
-      final recognition =
-          await _speech.recognize(bytes, languageHint: languageHint);
+      await Diagnostics.record('pipe: STT 시작');
+      // 파일에서 청크 단위로 스트리밍 인식한다(전체 적재 없음 → 긴 영상 OOM 방지).
+      final recognition = await _recognizer.recognizeFile(
+        extracted,
+        languageHint: languageHint,
+        onProgress: (done, total) {
+          if (value.status == ProcessingStatus.recognizing) {
+            value = value.copyWith(
+                recognizeDone: done, recognizeTotal: total);
+          }
+        },
+      );
       await Diagnostics.record('pipe: STT 완료 '
           '(${recognition.segments.length}seg, '
           '${recognition.detectedLanguageCode})');

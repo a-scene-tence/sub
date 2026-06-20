@@ -35,40 +35,55 @@ void main() {
     });
   });
 
-  group('splitWav', () {
-    test('고정 길이로 분할하고 각 청크는 유효한 WAV + 오프셋', () {
-      // 16kHz mono 16-bit → 32000 B/s. 5초 = 160000B. 2초 청크 → 3조각.
-      final wav = _wav(dataBytes: 160000);
-      final chunks = splitWav(wav, chunk: const Duration(seconds: 2));
+  group('planChunks', () {
+    test('고정 길이로 경계 분할 + 오프셋', () {
+      // 16kHz mono 16-bit → 32000 B/s. 2초 청크 = 64000B. 데이터 160000B → 3조각.
+      const info = WavInfo(
+        sampleRate: 16000,
+        channels: 1,
+        dataOffset: 44,
+        dataLength: 0, // planChunks는 totalDataBytes를 별도로 받는다.
+      );
+      final plans = planChunks(info,
+          totalDataBytes: 160000, chunk: const Duration(seconds: 2));
 
-      expect(chunks.length, 3);
-      expect(chunks[0].offset, Duration.zero);
-      expect(chunks[1].offset, const Duration(seconds: 2));
-      expect(chunks[2].offset, const Duration(seconds: 4));
+      expect(plans.length, 3);
+      expect(plans[0], (dataStart: 0, length: 64000, offset: Duration.zero));
+      expect(plans[1],
+          (dataStart: 64000, length: 64000, offset: const Duration(seconds: 2)));
+      expect(plans[2],
+          (dataStart: 128000, length: 32000, offset: const Duration(seconds: 4)));
+    });
 
-      // 각 청크는 독립 WAV로 파싱되고 레이트/채널이 보존된다.
-      for (final c in chunks) {
-        expect(wavSampleRate(c.bytes), 16000);
-        expect(wavChannels(c.bytes), 1);
+    test('경계는 프레임(channels*2)에 정렬', () {
+      // 스테레오 16-bit → 프레임 4B. 청크 바이트가 4의 배수로 내림되어야 한다.
+      const info = WavInfo(
+        sampleRate: 16000,
+        channels: 2,
+        dataOffset: 44,
+        dataLength: 0,
+      );
+      final plans = planChunks(info,
+          totalDataBytes: 1000000, chunk: const Duration(seconds: 1));
+      for (final p in plans) {
+        if (p != plans.last) expect(p.length % 4, 0);
       }
-      // 앞 두 조각은 64000B 데이터(+44 헤더), 마지막은 나머지 32000B.
-      expect(readWavInfo(chunks[0].bytes)!.dataLength, 64000);
-      expect(readWavInfo(chunks[2].bytes)!.dataLength, 32000);
     });
 
-    test('청크보다 짧은 입력은 원본 1개 그대로', () {
-      final wav = _wav(dataBytes: 1000);
-      final chunks = splitWav(wav, chunk: const Duration(seconds: 50));
-      expect(chunks.length, 1);
-      expect(chunks.first.bytes, same(wav));
-      expect(chunks.first.offset, Duration.zero);
+    test('데이터 0이면 빈 목록', () {
+      const info =
+          WavInfo(sampleRate: 16000, channels: 1, dataOffset: 44, dataLength: 0);
+      expect(planChunks(info, totalDataBytes: 0, chunk: const Duration(seconds: 1)),
+          isEmpty);
     });
+  });
 
-    test('WAV가 아니면 원본 1개로 폴백', () {
-      final bytes = <int>[1, 2, 3, 4, 5];
-      final chunks = splitWav(bytes, chunk: const Duration(seconds: 1));
-      expect(chunks.length, 1);
-      expect(chunks.first.bytes, same(bytes));
+  group('buildWavHeader round-trip', () {
+    test('생성한 헤더를 readWavInfo로 역파싱', () {
+      final header =
+          buildWavHeader(sampleRate: 48000, channels: 1, dataLength: 1000);
+      expect(wavSampleRate(<int>[...header, ...List<int>.filled(1000, 0)]), 48000);
+      expect(wavChannels(<int>[...header, ...List<int>.filled(1000, 0)]), 1);
     });
   });
 }

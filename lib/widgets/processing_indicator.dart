@@ -13,7 +13,10 @@ class ProcessingIndicator extends StatelessWidget {
       case ProcessingStatus.extracting:
         return '오디오 추출 중…';
       case ProcessingStatus.recognizing:
-        return '음성 인식 중…';
+        // 긴 영상은 청크 단위 진행률을 함께 표시한다.
+        return state.recognizeTotal > 1
+            ? '음성 인식 중… (${state.recognizeDone}/${state.recognizeTotal})'
+            : '음성 인식 중…';
       case ProcessingStatus.translating:
         return '번역 중…';
       case ProcessingStatus.ready:

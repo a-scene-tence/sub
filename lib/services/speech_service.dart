@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -95,13 +96,28 @@ class GoogleSpeechService implements SpeechService {
   }
 }
 
+/// 청크 진행 콜백(완료 청크 수, 전체 청크 수). 긴 영상의 진행률 표시에 쓴다.
+typedef RecognizeProgress = void Function(int done, int total);
+
+/// WAV 파일을 인식하는 상위 인터페이스(긴 파일은 청크 스트리밍으로 메모리 안전).
+abstract class AudioRecognizer {
+  Future<RecognitionResult> recognizeFile(
+    File wav, {
+    String? languageHint,
+    RecognizeProgress? onProgress,
+  });
+}
+
 /// 긴 영상 지원: 동기 `recognize`(≤60초/10MB)를 우회하기 위해 WAV를 고정 길이 청크로
 /// 잘라 [base]로 청크별 인식한 뒤, 타임스탬프를 청크 오프셋만큼 밀어 하나로 병합한다.
+///
+/// **메모리 안전**: 전체 파일을 메모리에 올리지 않고, 헤더(44B)만 읽어 포맷을 파악한 뒤
+/// 청크 구간만 디스크에서 읽어 처리한다(2시간 영상 ≈ 수백 MB여도 OOM 없음).
 ///
 /// API 키 인증을 그대로 유지하며(GCS/longRunning 불필요), 짧은 클립은 1청크로 [base]에
 /// 그대로 위임한다. 청크는 순차 호출이라 영상이 길수록 처리 시간·비용이 비례해 늘어난다
 /// (추후 병렬화 여지). 청크 경계에서 단어 하나가 잘릴 수 있으나 자막 용도에선 허용 수준.
-class ChunkedSpeechRecognizer implements SpeechService {
+class ChunkedSpeechRecognizer implements AudioRecognizer {
   ChunkedSpeechRecognizer(this.base, {Duration? chunkDuration})
       : chunkDuration = chunkDuration ?? AppConfig.sttChunkDuration;
 
@@ -109,38 +125,72 @@ class ChunkedSpeechRecognizer implements SpeechService {
   final Duration chunkDuration;
 
   @override
-  Future<RecognitionResult> recognize(
-    List<int> audioBytes, {
+  Future<RecognitionResult> recognizeFile(
+    File wav, {
     String? languageHint,
+    RecognizeProgress? onProgress,
   }) async {
-    final chunks = splitWav(audioBytes, chunk: chunkDuration);
-    if (chunks.length <= 1) {
-      return base.recognize(audioBytes, languageHint: languageHint);
-    }
+    final raf = await wav.open();
+    try {
+      final headerBytes = await raf.read(_wavHeaderProbe);
+      final info = readWavInfo(headerBytes);
+      final fileLength = await wav.length();
 
-    final merged = <TranscriptSegment>[];
-    final langCounts = <String, int>{};
-    for (final chunk in chunks) {
-      final r = await base.recognize(chunk.bytes, languageHint: languageHint);
-      for (final s in r.segments) {
-        merged.add(s.copyWith(
-          start: s.start + chunk.offset,
-          end: s.end + chunk.offset,
-        ));
+      // WAV가 아니거나 한 청크 이하로 짧으면 통째로 읽어 위임(작을 때만 안전).
+      final chunkBytes = info == null
+          ? 0
+          : info.bytesPerSecond * chunkDuration.inMilliseconds ~/ 1000;
+      if (info == null || fileLength - info.dataOffset <= chunkBytes) {
+        final bytes = await wav.readAsBytes();
+        onProgress?.call(1, 1);
+        return base.recognize(bytes, languageHint: languageHint);
       }
-      final lang = r.detectedLanguageCode;
-      if (lang.isNotEmpty) {
-        langCounts[lang] = (langCounts[lang] ?? 0) + r.segments.length;
-      }
-    }
 
-    if (merged.isEmpty) return RecognitionResult.empty;
-    final detected = langCounts.isEmpty
-        ? ''
-        : langCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
-    return RecognitionResult(segments: merged, detectedLanguageCode: detected);
+      final totalDataBytes = fileLength - info.dataOffset;
+      final plans = planChunks(info,
+          totalDataBytes: totalDataBytes, chunk: chunkDuration);
+
+      final merged = <TranscriptSegment>[];
+      final langCounts = <String, int>{};
+      for (var i = 0; i < plans.length; i++) {
+        final plan = plans[i];
+        await raf.setPosition(info.dataOffset + plan.dataStart);
+        final pcm = await raf.read(plan.length);
+        final header = buildWavHeader(
+          sampleRate: info.sampleRate,
+          channels: info.channels,
+          dataLength: pcm.length,
+        );
+        final chunkWav = <int>[...header, ...pcm];
+
+        final r = await base.recognize(chunkWav, languageHint: languageHint);
+        for (final s in r.segments) {
+          merged.add(s.copyWith(
+            start: s.start + plan.offset,
+            end: s.end + plan.offset,
+          ));
+        }
+        if (r.detectedLanguageCode.isNotEmpty) {
+          langCounts[r.detectedLanguageCode] =
+              (langCounts[r.detectedLanguageCode] ?? 0) + r.segments.length;
+        }
+        onProgress?.call(i + 1, plans.length);
+      }
+
+      if (merged.isEmpty) return RecognitionResult.empty;
+      final detected = langCounts.isEmpty
+          ? ''
+          : langCounts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+      return RecognitionResult(
+          segments: merged, detectedLanguageCode: detected);
+    } finally {
+      await raf.close();
+    }
   }
 }
+
+/// 헤더 파싱용으로 읽을 선두 바이트 수(표준 44B + 보조 청크 여유).
+const int _wavHeaderProbe = 1024;
 
 /// WAV(RIFF) 헤더에서 샘플레이트를 읽는다. WAV가 아니거나 헤더가 짧으면 `null`.
 ///

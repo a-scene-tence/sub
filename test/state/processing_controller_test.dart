@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -14,18 +13,15 @@ import 'package:video_subtitle_translator/state/processing_controller.dart';
 
 class _MockAudio extends Mock implements AudioExtractor {}
 
-class _MockSpeech extends Mock implements SpeechService {}
+class _MockRecognizer extends Mock implements AudioRecognizer {}
 
 class _MockTranslation extends Mock implements TranslationService {}
 
-class _FakeFile extends Fake implements File {
-  @override
-  Future<Uint8List> readAsBytes() async => Uint8List.fromList(<int>[0, 1, 2]);
-}
+class _FakeFile extends Fake implements File {}
 
 void main() {
   late _MockAudio audio;
-  late _MockSpeech speech;
+  late _MockRecognizer recognizer;
   late _MockTranslation translation;
   late File fakeFile;
 
@@ -35,7 +31,7 @@ void main() {
 
   setUp(() {
     audio = _MockAudio();
-    speech = _MockSpeech();
+    recognizer = _MockRecognizer();
     translation = _MockTranslation();
     fakeFile = _FakeFile();
     when(() => audio.extractWav(any())).thenAnswer((_) async => fakeFile);
@@ -44,13 +40,14 @@ void main() {
 
   ProcessingController makeController() => ProcessingController(
         audioExtractor: audio,
-        speechService: speech,
+        recognizer: recognizer,
         cueBuilder: CueBuilder(translation),
       );
 
   test('성공 경로: idle -> ... -> ready 전이 + 임시파일 정리', () async {
-    when(() =>
-            speech.recognize(any(), languageHint: any(named: 'languageHint')))
+    when(() => recognizer.recognizeFile(any(),
+            languageHint: any(named: 'languageHint'),
+            onProgress: any(named: 'onProgress')))
         .thenAnswer((_) async => RecognitionResult(
               segments: <TranscriptSegment>[
                 TranscriptSegment(
@@ -88,8 +85,9 @@ void main() {
   });
 
   test('무음(빈 인식)은 error 상태', () async {
-    when(() =>
-            speech.recognize(any(), languageHint: any(named: 'languageHint')))
+    when(() => recognizer.recognizeFile(any(),
+            languageHint: any(named: 'languageHint'),
+            onProgress: any(named: 'onProgress')))
         .thenAnswer((_) async => RecognitionResult.empty);
 
     final controller = makeController();
@@ -101,8 +99,9 @@ void main() {
   });
 
   test('STT 예외는 error 상태 + 정리', () async {
-    when(() =>
-            speech.recognize(any(), languageHint: any(named: 'languageHint')))
+    when(() => recognizer.recognizeFile(any(),
+            languageHint: any(named: 'languageHint'),
+            onProgress: any(named: 'onProgress')))
         .thenThrow(SpeechException('boom'));
 
     final controller = makeController();
