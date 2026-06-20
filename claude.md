@@ -76,6 +76,28 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.16 FFmpegKitConfig 정적 초기화 실패로 좁힘 → 원인 체인 캡처
+- **증상**: 9.15 진단 배너가 `native: ffmpeg 재등록 실패: NoClassDefFoundError:
+  com.antonkarpenko.ffmpegkit.FFmpegKitConfig` 표시. 즉 ffmpeg 플러그인은 로드되나 코어 클래스
+  `FFmpegKitConfig` 참조에서 죽음.
+- **원인(정적 분석으로 범위 축소, 빌드 없이)**: 게시된 APK(274MB)를 받아 검사 →
+  (1) 4개 ABI 모두 네이티브 `.so` 존재(`libffmpegkit.so` 등), (2) 앱에 R8/minify 꺼짐(android/에
+  `minifyEnabled` 없음) → 클래스 스트립 아님, (3) dex 원시 바이트에 `FFmpegKitConfig` 디스크립터
+  존재. → 클래스·.so 모두 APK에 있음에도 죽으므로 **`FFmpegKitConfig.<clinit>`(정적 초기화)가
+  기기에서 실패**로 확정. 최초 로드가 `ExceptionInInitializerError`를 던졌고(자동 등록 시점,
+  GeneratedPluginRegistrant try/catch로 삼켜짐), 재attach가 이미 실패한 클래스를 만나
+  `NoClassDefFoundError`를 본 것. 실제 사유(Caused by)는 기기에서만 드러남(APK 분석 불가).
+- **진단 조치**: `MainActivity.onCreate`에서 `super.onCreate()` 호출 **전에**
+  `Class.forName("...FFmpegKitConfig")`(initialize=true)로 최초 `<clinit>`를 우리가 먼저 트리거하고,
+  실패 시 예외의 cause 체인을 한 줄로 진단 배너 파일에 기록. 자동 등록이 최초 로드를 가로채기
+  전에 원본 예외를 잡기 위함. 9.15의 remove+add 블록은 정보가 없어 제거. (임시 코드)
+- **수정 분기(캡처될 사유별)**: `UnsatisfiedLinkError ...16 KB/aligned` → 기기 16KB 페이지, .so
+  미정렬 → 패키지 상향/대체; `dlopen ... not found`/압축 → `useLegacyPackaging true` 또는
+  `extractNativeLibs=true`; `text relocations` → 구형 .so → 대체; `NoClassDefFoundError: <다른클래스>`
+  → 코어 AAR 일부 미패키징 → 의존성 명시/대체.
+- **재발 방지**: `NoClassDefFoundError`(≠ClassNotFoundException)는 대개 정적 초기화 실패다. 원본
+  cause는 최초 로드에서만 나오므로, 의심 클래스를 자동 등록 전에 선로딩해 cause 체인을 잡는다.
+
 ### 9.15 ffmpeg 이벤트 채널 MissingPluginException(등록 실패 원인 진단)
 - **증상**: 진단 배너(9.14)가 실기기에서 포착 — `FlutterError: MissingPluginException(No
   implementation found for method listen on channel flutter.arthenica.com/ffmpeg_kit_event)`.
