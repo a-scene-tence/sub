@@ -76,6 +76,27 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.15 ffmpeg 이벤트 채널 MissingPluginException(등록 실패 원인 진단)
+- **증상**: 진단 배너(9.14)가 실기기에서 포착 — `FlutterError: MissingPluginException(No
+  implementation found for method listen on channel flutter.arthenica.com/ffmpeg_kit_event)`.
+  자막 파이프라인 첫 단계(오디오 추출)에서 FFmpegKit 이벤트 채널에 네이티브 핸들러가 없어 죽음.
+  (`ffmpeg_kit_flutter_new` 4.2.1은 `FFmpegKitConfig` 지연 초기화에서 이벤트 채널 `listen`을
+  가장 먼저 호출 → "플러그인 네이티브 측이 채널을 서빙 못함"의 신호.)
+- **원인(미확정 → 진단 중)**: 플러그인 클래스 `com.antonkarpenko.ffmpegkit.FFmpegKitFlutterPlugin`는
+  `GeneratedPluginRegistrant` 등록 목록엔 있고 다른 6개 플러그인(path_provider 등)은 정상. 그러나
+  `GeneratedPluginRegistrant`의 각 등록은 `onAttachedToEngine` 예외를 **try/catch로 로그만 남기고
+  삼킴** → ffmpeg attach가 던지면 채널이 조용히 미등록될 수 있음. 기기 logcat 없이는 사유 미확정.
+  툴체인 스큐 존재(4.2.1은 changelog상 Flutter 3.29/Kotlin 2.2.0 겨냥, CI는 3.27.1/1.8.22).
+- **진단 조치**: 추측 전 사유 캡처. `MainActivity.configureFlutterEngine`에서 이미 등록된 ffmpeg
+  플러그인을 `flutterEngine.plugins.remove(cls)` 후 `add(new ...)`로 **재attach**하고, 그때의
+  실제 예외(또는 성공)를 진단 배너가 읽는 동일 파일(`filesDir/last_breadcrumb.txt`)에 기록.
+  경로 일치 근거: `path_provider_android`의 `getApplicationSupportPath()` =
+  `io.flutter.util.PathUtils.getFilesDir(ctx)` = `context.getFilesDir()` == 네이티브 `filesDir`.
+  배너 결과로 분기: "재등록 실패: <예외>" → 등록이 원인(예외가 사유 제공); "재등록 성공(등록 정상)"
+  → 등록은 정상, 원인은 채널명/버전 스큐 → Flutter 3.29 상향 또는 의존성 교체로 피벗. (임시 코드)
+- **재발 방지**: 네이티브 플러그인 등록 실패는 `GeneratedPluginRegistrant`가 삼키므로, 의심 시
+  해당 플러그인만 remove+add로 재attach해 예외를 가시화한다(전체 자동 등록 비활성화는 9.13 회귀 위험).
+
 ### 9.14 자막 파이프라인이 네이티브 크래시로 조용히 종료, 멈춘 단계 불명
 - **증상**: 영상 처리 중 앱이 죽거나 멈추는데, 어느 단계(오디오 추출/STT/번역)에서 멈췄는지
   알 수 없음. FFmpegKit 추출·대용량 오디오 STT 구간은 Dart `catch`로 잡히지 않는 네이티브
