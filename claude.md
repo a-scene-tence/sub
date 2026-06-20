@@ -76,6 +76,24 @@ flutter test         # 전부 통과여야 함
 
 > 형식: 증상 → 원인 → 해결 → 재발 방지. 새 항목은 위에 추가.
 
+### 9.17 원인 확정(16KB 페이지) → FFmpegKit 제거, 네이티브 오디오 추출로 교체
+- **증상**: 9.16 캡처 배너가 실기기(삼성 SM-S938N/Galaxy S25, **API 36**)에서 표시 →
+  `UnsatisfiedLinkError: Bad JNI version returned from JNI_OnLoad in`
+  `".../lib/arm64-v8a/libffmpegkit_abidetect.so": 0`.
+- **원인**: FFmpegKit ABI 감지용 `libffmpegkit_abidetect.so`가 로드 시 잘못된 JNI 버전(0) 반환 →
+  런타임 거부. **Android 15/16 16KB 페이지 정렬 비호환**(arthenica/ffmpeg-kit#1000)의 전형적
+  증상. `ffmpeg_kit_flutter_new` 4.2.1은 2.0.0부터 "16KB 호환 AAR"을 표방하나 이 기기에서 실패.
+  FFmpegKit은 폐기(retired)되어 또 다른 포크 교체도 같은 위험.
+- **해결**: FFmpeg 의존성 **완전 제거**. 앱이 FFmpeg를 쓰던 유일 용도(영상→16-bit mono PCM 추출)를
+  플랫폼 네이티브로 교체 — Android `MediaExtractor`+`MediaCodec`, iOS `AVAssetReader`(둘 다 신규
+  `AudioExtractor`), `MethodChannel('.../audio')`로 노출. 샘플레이트는 소스 네이티브 레이트 유지
+  (리샘플 없음), WAV 헤더에 기록 → `SpeechService.recognize`가 헤더(바이트 24–27)에서 실제 레이트를
+  읽어 STT 요청에 사용(`wavSampleRate`/`wavChannels`, 실패 시 `AppConfig` 폴백). `AudioExtractor`
+  추상 인터페이스·`processing_controller`·`recognize` 시그니처는 무변경 → 변경 표면 최소.
+  번들 `.so` 제거로 16KB/JNI/dlopen 실패 클래스 영구 제거 + APK 수십 MB 감소.
+- **재발 방지**: 단일·협소 용도로 거대 네이티브 바이너리(특히 폐기된 프로젝트)를 끌어오지 말 것.
+  OS 기본 미디어 API(MediaCodec/AVAssetReader)로 충분하면 그쪽이 16KB·ABI·유지보수에서 안전하다.
+
 ### 9.16 FFmpegKitConfig 정적 초기화 실패로 좁힘 → 원인 체인 캡처
 - **증상**: 9.15 진단 배너가 `native: ffmpeg 재등록 실패: NoClassDefFoundError:
   com.antonkarpenko.ffmpegkit.FFmpegKitConfig` 표시. 즉 ffmpeg 플러그인은 로드되나 코어 클래스

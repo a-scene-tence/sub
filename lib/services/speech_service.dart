@@ -50,8 +50,8 @@ class GoogleSpeechService implements SpeechService {
     final body = <String, dynamic>{
       'config': <String, dynamic>{
         'encoding': AppConfig.sttEncoding,
-        'sampleRateHertz': AppConfig.sampleRateHertz,
-        'audioChannelCount': AppConfig.audioChannels,
+        'sampleRateHertz': wavSampleRate(audioBytes) ?? AppConfig.sampleRateHertz,
+        'audioChannelCount': wavChannels(audioBytes) ?? AppConfig.audioChannels,
         'languageCode': primary,
         'alternativeLanguageCodes': alternatives,
         'enableWordTimeOffsets': true,
@@ -93,6 +93,37 @@ class GoogleSpeechService implements SpeechService {
     return '응답을 해석할 수 없음';
   }
 }
+
+/// WAV(RIFF) 헤더에서 샘플레이트를 읽는다. WAV가 아니거나 헤더가 짧으면 `null`.
+///
+/// 네이티브 추출기가 소스 네이티브 레이트로 WAV를 만들므로, STT 요청 레이트는 이 값을 따른다.
+/// 오프셋: 0–3 `RIFF`, 8–11 `WAVE`, 24–27 샘플레이트(little-endian).
+int? wavSampleRate(List<int> bytes) {
+  if (!_isWav(bytes)) return null;
+  return _readU32le(bytes, 24);
+}
+
+/// WAV(RIFF) 헤더에서 채널 수를 읽는다(오프셋 22–23, little-endian). 아니면 `null`.
+int? wavChannels(List<int> bytes) {
+  if (!_isWav(bytes)) return null;
+  return bytes[22] | (bytes[23] << 8);
+}
+
+bool _isWav(List<int> b) {
+  if (b.length < 44) return false;
+  // 'RIFF' .... 'WAVE'
+  return b[0] == 0x52 &&
+      b[1] == 0x49 &&
+      b[2] == 0x46 &&
+      b[3] == 0x46 &&
+      b[8] == 0x57 &&
+      b[9] == 0x41 &&
+      b[10] == 0x56 &&
+      b[11] == 0x45;
+}
+
+int _readU32le(List<int> b, int o) =>
+    b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
 
 /// `speech:recognize` 응답 JSON을 [RecognitionResult]로 파싱한다(순수 함수, 테스트 대상).
 ///

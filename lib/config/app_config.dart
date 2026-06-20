@@ -1,7 +1,8 @@
 /// 앱 전역 상수: API 엔드포인트, 오디오 인코딩, 자막 세그먼트 규칙.
 ///
-/// 인코딩 상수(샘플레이트/채널/포맷)는 `AudioExtractionService`의 ffmpeg 출력과
-/// **반드시 일치**해야 한다. 불일치 시 STT가 에러 없이 빈/깨진 결과를 낸다.
+/// 오디오는 플랫폼 네이티브 추출(Android MediaCodec / iOS AVAssetReader)로 16-bit mono
+/// PCM WAV를 만든다. 샘플레이트는 소스 네이티브 레이트를 그대로 쓰며, STT 요청에는
+/// `SpeechService`가 WAV 헤더에서 실제 레이트를 읽어 사용한다(아래 값은 헤더 파싱 실패 시 폴백).
 class AppConfig {
   AppConfig._();
 
@@ -13,18 +14,12 @@ class AppConfig {
   static const String translateV2Url =
       'https://translation.googleapis.com/language/translate/v2';
 
-  // --- 오디오 인코딩(ffmpeg 출력과 일치) ---
+  // --- 오디오 인코딩(네이티브 추출 출력과 일치) ---
   static const String sttEncoding = 'LINEAR16';
+
+  /// WAV 헤더 파싱 실패 시 사용할 폴백 샘플레이트. 실제 값은 추출된 WAV 헤더에서 읽는다.
   static const int sampleRateHertz = 16000;
   static const int audioChannels = 1;
-
-  /// ffmpeg로 16kHz mono PCM WAV를 만드는 인자.
-  static const List<String> ffmpegAudioArgs = <String>[
-    '-vn', // 비디오 트랙 제거
-    '-ac', '1', // mono
-    '-ar', '16000', // 16kHz
-    '-c:a', 'pcm_s16le', // LINEAR16
-  ];
 
   // --- MVP 제약: 인라인 STT는 60초 한도 ---
   static const Duration maxInlineClipDuration = Duration(seconds: 60);

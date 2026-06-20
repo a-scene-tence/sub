@@ -1,11 +1,8 @@
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-
-import '../config/app_config.dart';
 
 class AudioExtractionException implements Exception {
   AudioExtractionException(this.message);
@@ -20,12 +17,21 @@ abstract class AudioExtractor {
   Future<void> cleanup(File file);
 }
 
-/// 영상에서 16kHz mono LINEAR16 WAV 오디오를 추출한다(디바이스 전용, ffmpeg).
+/// 영상에서 16-bit mono PCM WAV 오디오를 추출한다(디바이스 전용, 플랫폼 네이티브).
 ///
-/// 출력 인코딩은 [AppConfig]의 STT 설정과 정확히 일치해야 한다.
+/// Android는 `MediaExtractor`+`MediaCodec`, iOS는 `AVAssetReader`로 디코드한다(폐기된
+/// FFmpegKit 제거). 샘플레이트는 소스 네이티브 레이트를 유지하고, WAV 헤더에 기록한다.
+/// STT는 그 헤더에서 실제 레이트를 읽으므로 별도 리샘플링은 하지 않는다.
 class AudioExtractionService implements AudioExtractor {
-  /// [videoPath](로컬 파일 경로 또는 ffmpeg가 읽을 수 있는 URL)에서 WAV를 추출해
-  /// 생성된 임시 파일을 반환한다. 호출자는 사용 후 [cleanup]으로 정리한다.
+  AudioExtractionService({MethodChannel? channel})
+      : _channel = channel ??
+            const MethodChannel(
+                'com.example.video_subtitle_translator/audio');
+
+  final MethodChannel _channel;
+
+  /// [videoPath](로컬 파일 경로 또는 http(s) URL)에서 WAV를 추출해 생성된 임시 파일을
+  /// 반환한다. 호출자는 사용 후 [cleanup]으로 정리한다.
   @override
   Future<File> extractWav(String videoPath) async {
     final tmpDir = await getTemporaryDirectory();
@@ -34,20 +40,15 @@ class AudioExtractionService implements AudioExtractor {
       'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
     );
 
-    final args = <String>[
-      '-y', // 덮어쓰기
-      '-i', videoPath,
-      ...AppConfig.ffmpegAudioArgs,
-      outPath,
-    ];
-
-    final session = await FFmpegKit.executeWithArguments(args);
-    final returnCode = await session.getReturnCode();
-
-    if (!ReturnCode.isSuccess(returnCode)) {
-      final logs = await session.getAllLogsAsString();
-      throw AudioExtractionException(
-          '오디오 추출 실패 (code $returnCode): ${logs ?? ''}');
+    try {
+      await _channel.invokeMethod<Map<dynamic, dynamic>>('extractWav', {
+        'videoPath': videoPath,
+        'outPath': outPath,
+      });
+    } on PlatformException catch (e) {
+      throw AudioExtractionException('오디오 추출 실패: ${e.message ?? e.code}');
+    } on MissingPluginException {
+      throw AudioExtractionException('오디오 추출 기능을 사용할 수 없습니다(미지원 플랫폼).');
     }
 
     final file = File(outPath);
