@@ -14,6 +14,12 @@ class VideoSubtitleTranslatorApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3B6EF6)),
         useMaterial3: true,
       ),
+      // 앱 전역 하단/좌우 인셋 처리(Android 15 edge-to-edge에서 내용이 내비게이션
+      // 버튼과 겹치지 않도록). 상단은 각 화면의 AppBar가 처리하므로 top:false.
+      builder: (context, child) => SafeArea(
+        top: false,
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: const HomeScreen(),
     );
   }
