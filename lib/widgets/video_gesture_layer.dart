@@ -23,6 +23,7 @@ class VideoGestureLayer extends StatefulWidget {
     this.scale = 1.0,
     this.offset = Offset.zero,
     this.onZoomChanged,
+    this.onTap,
   });
 
   final VideoPlayerController controller;
@@ -30,6 +31,9 @@ class VideoGestureLayer extends StatefulWidget {
   final double scale;
   final Offset offset;
   final void Function(double scale, Offset offset)? onZoomChanged;
+
+  /// 한 번 탭(더블탭과 구분됨): 재생 컨트롤 표시/숨김 토글에 사용.
+  final VoidCallback? onTap;
 
   @override
   State<VideoGestureLayer> createState() => _VideoGestureLayerState();
@@ -148,6 +152,7 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
         _layerHeight = constraints.maxHeight;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
           onDoubleTapDown: _onDoubleTapDown,
           onDoubleTap: _onDoubleTap,
           onScaleStart: _onScaleStart,

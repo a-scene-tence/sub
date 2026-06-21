@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -47,6 +48,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Offset _videoOffset = Offset.zero; // 줌 상태 팬.
   bool _fillMode = false; // 맞춤 ↔ 꽉 채움.
 
+  // 재생 컨트롤 자동 숨김: 재생 중에는 일정 시간 뒤 숨기고, 화면 탭으로 다시 표시한다.
+  bool _controlsVisible = true;
+  Timer? _hideTimer;
+  bool _wasPlaying = false;
+
   @override
   void initState() {
     super.initState();
@@ -94,6 +100,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _player.attach(controller, const <SubtitleCue>[]);
     live.attach(controller, _player);
     live.addListener(_onLiveChanged);
+    // 재생/일시정지 전환을 감지해 컨트롤 자동 숨김을 제어한다.
+    controller.addListener(_onVideoStateChanged);
 
     setState(() {});
     await controller.play();
@@ -101,16 +109,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await WakelockPlus.enable();
   }
 
+  /// 재생↔일시정지 전환 시: 재생하면 잠시 뒤 컨트롤 숨김 예약, 멈추면 컨트롤 표시.
+  void _onVideoStateChanged() {
+    final playing = _videoController?.value.isPlaying ?? false;
+    if (playing == _wasPlaying) return;
+    _wasPlaying = playing;
+    if (playing) {
+      _scheduleHide();
+    } else {
+      _hideTimer?.cancel();
+      if (mounted) setState(() => _controlsVisible = true);
+    }
+  }
+
+  /// 재생 중일 때만 일정 시간 후 컨트롤을 자동으로 숨긴다.
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    if (_videoController?.value.isPlaying ?? false) {
+      _hideTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _controlsVisible = false);
+      });
+    }
+  }
+
+  /// 화면 탭: 컨트롤 표시/숨김 토글(표시하면 자동 숨김 타이머 재시작).
+  void _toggleControls() {
+    setState(() => _controlsVisible = !_controlsVisible);
+    if (_controlsVisible) _scheduleHide();
+  }
+
   void _toggleFullscreen() {
     setState(() {
       _isFullscreen = !_isFullscreen;
       if (!_isFullscreen) {
-        // 전체화면 해제 시 확대/팬/채움 리셋.
+        // 전체화면 해제 시 확대/팬 리셋(꽉 채움은 일반 모드에서도 쓰므로 유지).
         _videoScale = 1.0;
         _videoOffset = Offset.zero;
-        _fillMode = false;
       }
+      _controlsVisible = true; // 모드 전환 직후엔 컨트롤을 보여준다.
     });
+    _scheduleHide();
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
@@ -147,6 +185,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
+    _videoController?.removeListener(_onVideoStateChanged);
     _live?.removeListener(_onLiveChanged);
     _live?.dispose();
 
@@ -214,79 +254,88 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         .withValues(alpha: settings.subtitleBgOpacity);
     final isWorking = _live?.value.status == LiveStatus.working;
 
-    return Column(
+    // 전체 영역을 채우는 Stack: 영상은 가운데에서 확대/축소·팬·핏 적용,
+    // 제스처 레이어는 레터박스 위에서도 동작하도록 전체를 덮는다. 하단 컨트롤은
+    // 영상 위에 겹쳐 두고, 재생 중에는 자동으로 숨겨 영상을 가리지 않는다.
+    return Stack(
+      fit: StackFit.expand,
       children: <Widget>[
-        Expanded(
-          // 전체 영역을 채우는 Stack: 영상은 가운데에서 확대/축소·팬·핏 적용,
-          // 제스처 레이어는 레터박스 위에서도 동작하도록 전체를 덮는다.
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              Center(
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..translate(_videoOffset.dx, _videoOffset.dy)
-                    ..scale(_videoScale),
-                  child: _fillMode
-                      ? FittedBox(
-                          fit: BoxFit.cover,
-                          clipBehavior: Clip.hardEdge,
-                          child: SizedBox.fromSize(
-                            size: controller.value.size,
-                            child: VideoPlayer(controller),
-                          ),
-                        )
-                      : AspectRatio(
-                          aspectRatio: controller.value.aspectRatio,
-                          child: VideoPlayer(controller),
-                        ),
-                ),
-              ),
-              Positioned.fill(
-                child: ValueListenableBuilder(
-                  valueListenable: _player.activeCue,
-                  builder: (context, cue, _) => SubtitleOverlay(
-                    cue: cue,
-                    showSource: settings.showSource,
-                    fontSize: settings.subtitleFontSize,
-                    textColor: settings.subtitleTextColor,
-                    backgroundColor: bgColor,
+        Center(
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..translate(_videoOffset.dx, _videoOffset.dy)
+              ..scale(_videoScale),
+            child: _fillMode
+                ? FittedBox(
+                    fit: BoxFit.cover,
+                    clipBehavior: Clip.hardEdge,
+                    child: SizedBox.fromSize(
+                      size: controller.value.size,
+                      child: VideoPlayer(controller),
+                    ),
+                  )
+                : AspectRatio(
+                    aspectRatio: controller.value.aspectRatio,
+                    child: VideoPlayer(controller),
                   ),
-                ),
-              ),
-              // 전체 영역을 덮는 제스처 레이어(하단 컨트롤은 별도 위젯이라 영향 없음).
-              Positioned.fill(
-                child: VideoGestureLayer(
-                  controller: controller,
-                  zoomEnabled: _isFullscreen,
-                  scale: _videoScale,
-                  offset: _videoOffset,
-                  onZoomChanged: (s, o) => setState(() {
-                    _videoScale = s;
-                    _videoOffset = o;
-                  }),
-                ),
-              ),
-              // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
-              if (isWorking)
-                const Positioned(
-                  top: 8,
-                  right: 8,
-                  child: _LiveBadge(),
-                ),
-            ],
           ),
         ),
-        // 하단 시스템 내비게이션 바와 겹치지 않도록 인셋을 확보한다.
-        SafeArea(
-          top: false,
-          child: PlayerControls(
+        Positioned.fill(
+          child: ValueListenableBuilder(
+            valueListenable: _player.activeCue,
+            builder: (context, cue, _) => SubtitleOverlay(
+              cue: cue,
+              showSource: settings.showSource,
+              fontSize: settings.subtitleFontSize,
+              textColor: settings.subtitleTextColor,
+              backgroundColor: bgColor,
+            ),
+          ),
+        ),
+        // 전체 영역을 덮는 제스처 레이어. 한 번 탭하면 컨트롤 표시/숨김 토글.
+        Positioned.fill(
+          child: VideoGestureLayer(
             controller: controller,
-            isFullscreen: _isFullscreen,
-            onToggleFullscreen: _toggleFullscreen,
-            isFill: _fillMode,
-            onToggleFill: _toggleFill,
+            zoomEnabled: _isFullscreen,
+            scale: _videoScale,
+            offset: _videoOffset,
+            onTap: _toggleControls,
+            onZoomChanged: (s, o) => setState(() {
+              _videoScale = s;
+              _videoOffset = o;
+            }),
+          ),
+        ),
+        // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
+        if (isWorking)
+          const Positioned(
+            top: 8,
+            right: 8,
+            child: _LiveBadge(),
+          ),
+        // 하단 재생 컨트롤(자동 숨김). 숨김 상태에선 터치를 통과시켜 탭으로 다시 표시.
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: IgnorePointer(
+            ignoring: !_controlsVisible,
+            child: AnimatedOpacity(
+              opacity: _controlsVisible ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              // 하단 시스템 내비게이션 바와 겹치지 않도록 인셋을 확보한다.
+              child: SafeArea(
+                top: false,
+                child: PlayerControls(
+                  controller: controller,
+                  isFullscreen: _isFullscreen,
+                  onToggleFullscreen: _toggleFullscreen,
+                  isFill: _fillMode,
+                  onToggleFill: _toggleFill,
+                ),
+              ),
+            ),
           ),
         ),
       ],
