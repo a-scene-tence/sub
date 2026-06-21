@@ -5,6 +5,7 @@ import '../config/app_config.dart';
 import '../providers.dart';
 import '../services/language_codes.dart';
 import '../state/settings_controller.dart';
+import 'api_key_guide_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -79,6 +80,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           FilledButton(
             onPressed: _saving ? null : _saveKey,
             child: Text(_saving ? '저장 중…' : '키 저장'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ApiKeyGuideScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.help_outline),
+            label: const Text('API 키 발급 방법'),
           ),
           const Divider(height: 40),
           const Text('번역 대상 언어', style: TextStyle(fontWeight: FontWeight.bold)),

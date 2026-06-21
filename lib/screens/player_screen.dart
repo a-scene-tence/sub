@@ -11,6 +11,7 @@ import '../state/player_controller.dart';
 import '../state/settings_controller.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/subtitle_overlay.dart';
+import '../widgets/video_gesture_layer.dart';
 import 'settings_screen.dart';
 
 /// 영상 소스: 로컬 파일 또는 네트워크 URL.
@@ -181,6 +182,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       backgroundColor: bgColor,
                     ),
                   ),
+                ),
+                // 영상 영역만 덮는 제스처 레이어(하단 컨트롤은 별도 위젯이라 영향 없음).
+                Positioned.fill(
+                  child: VideoGestureLayer(controller: controller),
                 ),
                 // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
                 if (isWorking)
