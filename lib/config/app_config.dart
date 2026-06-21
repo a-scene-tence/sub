@@ -14,6 +14,17 @@ class AppConfig {
   static const String translateV2Url =
       'https://translation.googleapis.com/language/translate/v2';
 
+  /// Gemini(생성형 언어 API) 베이스 URL. 자연스러운 구어체 자막 번역에 사용.
+  static const String geminiBaseUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models';
+
+  /// 번역에 사용할 Gemini 모델(빠르고 저렴). 키/리전에서 미가용이면 폴백이 받아준다.
+  static const String geminiModel = 'gemini-2.5-flash';
+
+  /// 지정 모델의 generateContent 엔드포인트를 만든다.
+  static String geminiGenerateUrl(String model) =>
+      '$geminiBaseUrl/$model:generateContent';
+
   // --- 오디오 인코딩(네이티브 추출 출력과 일치) ---
   static const String sttEncoding = 'LINEAR16';
 

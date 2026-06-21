@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/secrets.dart';
 import 'services/audio_extraction_service.dart';
 import 'services/cue_builder.dart';
+import 'services/fallback_translation_service.dart';
+import 'services/gemini_translation_service.dart';
 import 'services/speech_service.dart';
 import 'services/translation_service.dart';
 import 'state/live_caption_controller.dart';
@@ -37,7 +39,13 @@ final liveCaptionControllerFactory =
   return (LiveArgs a) => LiveCaptionController(
         extractor: AudioExtractionService(),
         speech: GoogleSpeechService(apiKey: a.apiKey),
-        cueBuilder: CueBuilder(GoogleTranslationService(apiKey: a.apiKey)),
+        // 자연스러운 구어체 번역은 Gemini로, 실패 시 Google 번역 v2로 폴백.
+        cueBuilder: CueBuilder(
+          FallbackTranslationService(
+            primary: GeminiTranslationService(apiKey: a.apiKey),
+            secondary: GoogleTranslationService(apiKey: a.apiKey),
+          ),
+        ),
         videoPath: a.videoPath,
         targetLanguage: a.targetLanguage,
         languageHint: a.languageHint,
