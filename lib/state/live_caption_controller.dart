@@ -9,7 +9,7 @@ import '../models/subtitle_cue.dart';
 import '../services/audio_extraction_service.dart';
 import '../services/cue_builder.dart';
 import '../services/diagnostics.dart';
-import '../services/speech_service.dart';
+import '../services/gemini_caption_service.dart';
 import 'player_controller.dart';
 
 /// 라이브 자막 진행 상태(전체화면 차단 오버레이 대신 가벼운 표식용).
@@ -32,17 +32,16 @@ class LiveCaptionState {
 /// 재생 중 보고 있는 구간만 실시간으로 인식·번역해 자막을 점진적으로 붙이는 컨트롤러.
 ///
 /// 영상 전체를 미리 처리하지 않는다. [enabled]이고 재생 중일 때만, 재생 위치를 따라
-/// 다음 윈도우 `[_processedEnd, _processedEnd+window)`를 네이티브로 추출 → 동기 STT
-/// (윈도우 < 60초) → [CueBuilder]로 번역·큐 생성 → 시각을 윈도우 시작만큼 밀어 누적
-/// 목록에 병합 → [PlayerController.updateCues]로 갱신한다.
+/// 다음 윈도우 `[_processedEnd, _processedEnd+window)`를 네이티브로 추출 → [CaptionSource]가
+/// Gemini 단일 호출로 전사+번역해 (윈도우 기준 상대 시각의) 큐 생성 → 시각을 윈도우 시작만큼
+/// 밀어 누적 목록에 병합 → [PlayerController.updateCues]로 갱신한다.
 ///
 /// API 절감: 재생을 따라가며 본 구간만 호출한다. 앞으로 탐색하면 건너뛴 구간은
 /// 인식하지 않고(frontier 점프), 뒤로 탐색하면 캐시된 큐를 그대로 재사용한다.
 class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
   LiveCaptionController({
     required AudioExtractor extractor,
-    required SpeechService speech,
-    required CueBuilder cueBuilder,
+    required CaptionSource caption,
     required String videoPath,
     required this.targetLanguage,
     this.languageHint,
@@ -50,8 +49,7 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
     Duration? lookahead,
     Duration tick = const Duration(milliseconds: 500),
   })  : _extractor = extractor,
-        _speech = speech,
-        _cueBuilder = cueBuilder,
+        _caption = caption,
         _videoPath = videoPath,
         _window = window ?? AppConfig.liveWindow,
         _lookahead = lookahead ?? AppConfig.liveLookahead,
@@ -59,8 +57,7 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
         super(const LiveCaptionState());
 
   final AudioExtractor _extractor;
-  final SpeechService _speech;
-  final CueBuilder _cueBuilder;
+  final CaptionSource _caption;
   final String _videoPath;
   final String targetLanguage;
   final String? languageHint;
@@ -143,10 +140,12 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
     try {
       wav = await _extractor.extractWav(_videoPath, start: start, end: end);
       final bytes = await wav.readAsBytes(); // 윈도우(≤15초)는 작아 전체 읽기 안전.
-      final rec = await _speech.recognize(bytes, languageHint: languageHint);
-      if (!rec.isEmpty) {
-        final cues =
-            await _cueBuilder.build(rec, targetLanguage: targetLanguage);
+      final cues = await _caption.caption(
+        bytes,
+        targetLanguage: targetLanguage,
+        languageHint: languageHint,
+      );
+      if (cues.isNotEmpty) {
         final shifted = cues
             .map((c) => c.copyWith(start: c.start + start, end: c.end + start))
             .toList();

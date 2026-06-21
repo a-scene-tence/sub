@@ -9,7 +9,7 @@ void main() {
     );
 
     expect(find.text('API 키 발급 방법'), findsOneWidget); // AppBar 제목
-    expect(find.text('1. Google Cloud 프로젝트 만들기'), findsOneWidget);
+    expect(find.text('1. Google AI Studio 접속'), findsOneWidget);
 
     // 비용 안내는 목록 하단이라 스크롤해서 확인(ListView는 지연 빌드).
     // SelectableText도 Scrollable이라 바깥 ListView의 Scrollable을 지정한다.

@@ -6,13 +6,15 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Google Cloud API 키 공급자.
+/// Gemini(Google AI Studio) API 키 공급자.
+///
+/// 이 앱은 음성 인식·번역을 모두 Gemini로 처리하므로 이 키 하나만 사용한다.
 ///
 /// 우선순위(읽기): (1) secure storage, (2) SharedPreferences,
-/// (3) 앱 전용(샌드박스) 파일, (4) 빌드 시 `.env`의 `GOOGLE_API_KEY`.
+/// (3) 앱 전용(샌드박스) 파일, (4) 빌드 시 `.env`의 `GEMINI_API_KEY`.
 ///
-/// 보안 규칙: 키를 로그·예외 메시지에 노출하지 않는다. `.env`/서비스계정 JSON은 커밋 금지.
-/// 모바일 바이너리의 키는 추출 가능하므로 Cloud Console에서 API/앱ID로 제한할 것.
+/// 보안 규칙: 키를 로그·예외 메시지에 노출하지 않는다. `.env`는 커밋 금지.
+/// 모바일 바이너리의 키는 추출 가능하므로 AI Studio에서 키 제한을 설정할 것.
 ///
 /// 일부 기기는 secure storage(keystore)도, 파일 디렉터리 조회도 실패한다(9.12).
 /// 따라서 모든 native 호출에 [_ioTimeout]을 걸고, keystore에 비의존적인
@@ -27,33 +29,16 @@ class Secrets {
 
   final FlutterSecureStorage _storage;
 
-  // Cloud(STT·번역) 키 저장 식별자.
-  static const String _storageKey = 'google_api_key';
-  static const String _fallbackFileName = 'google_api_key.txt';
-
-  // Gemini(자연스러운 번역) 전용 키 저장 식별자. Google AI Studio에서 발급.
+  // Gemini 키 저장 식별자. Google AI Studio에서 발급.
   static const String _geminiStorageKey = 'gemini_api_key';
   static const String _geminiFallbackFileName = 'gemini_api_key.txt';
 
   /// native 호출이 무한 대기하는 기기 대비 타임아웃.
   static const Duration _ioTimeout = Duration(seconds: 5);
 
-  // --- 공개 API: Cloud(STT·번역) 키 --------------------------------------------
+  // --- 공개 API: Gemini 키 ----------------------------------------------------
 
-  /// 유효한 Cloud API 키를 반환한다. 없으면 null.
-  Future<String?> getApiKey() =>
-      _get(_storageKey, _fallbackFileName, 'GOOGLE_API_KEY');
-
-  /// Cloud API 키를 저장한다(다층 폴백, 실패 시 진단 예외).
-  Future<void> setApiKey(String key) =>
-      _set(_storageKey, _fallbackFileName, key);
-
-  /// 저장된 Cloud 키 제거(모든 계층, best-effort).
-  Future<void> clearApiKey() => _clear(_storageKey, _fallbackFileName);
-
-  // --- 공개 API: Gemini 전용 키(선택) -----------------------------------------
-
-  /// 저장된 Gemini 키를 반환한다. 없으면 null(이 경우 기본 Google 번역 사용).
+  /// 저장된 Gemini 키를 반환한다. 없으면 null.
   Future<String?> getGeminiApiKey() =>
       _get(_geminiStorageKey, _geminiFallbackFileName, 'GEMINI_API_KEY');
 

@@ -4,12 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_subtitle_translator/engine/subtitle_sync_engine.dart';
-import 'package:video_subtitle_translator/models/recognition_result.dart';
-import 'package:video_subtitle_translator/models/transcript_segment.dart';
+import 'package:video_subtitle_translator/models/subtitle_cue.dart';
 import 'package:video_subtitle_translator/services/audio_extraction_service.dart';
-import 'package:video_subtitle_translator/services/cue_builder.dart';
-import 'package:video_subtitle_translator/services/speech_service.dart';
-import 'package:video_subtitle_translator/services/translation_service.dart';
+import 'package:video_subtitle_translator/services/gemini_caption_service.dart';
 import 'package:video_subtitle_translator/state/live_caption_controller.dart';
 import 'package:video_subtitle_translator/state/player_controller.dart';
 
@@ -39,39 +36,29 @@ class _RecordingExtractor implements AudioExtractor {
   }
 }
 
-/// 호출마다 0.5~1.0초 세그먼트 하나를 돌려주는 가짜 STT(에러/무음 주입 가능).
-class _FakeSpeech implements SpeechService {
-  _FakeSpeech({this.result, this.error});
-  RecognitionResult? result;
+/// 호출마다 0.5~1.0초(윈도우 상대) 큐 하나를 돌려주는 가짜 캡션 소스(에러/무음 주입 가능).
+class _FakeCaptionSource implements CaptionSource {
+  _FakeCaptionSource({this.cues, this.error});
+  List<SubtitleCue>? cues;
   Object? error;
   int calls = 0;
 
   @override
-  Future<RecognitionResult> recognize(List<int> audioBytes,
-      {String? languageHint}) async {
+  Future<List<SubtitleCue>> caption(List<int> audioBytes,
+      {required String targetLanguage, String? languageHint}) async {
     calls++;
     if (error != null) throw error!;
-    return result ??
-        RecognitionResult(
-          segments: <TranscriptSegment>[
-            TranscriptSegment(
-              start: const Duration(milliseconds: 500),
-              end: const Duration(seconds: 1),
-              text: 'seg',
-              languageCode: 'en-US',
-            ),
-          ],
-          detectedLanguageCode: 'en-US',
-        );
+    return cues ??
+        <SubtitleCue>[
+          SubtitleCue(
+            start: const Duration(milliseconds: 500),
+            end: const Duration(seconds: 1),
+            text: 'seg',
+            sourceText: 'seg',
+            languageCode: 'en-US',
+          ),
+        ];
   }
-}
-
-/// 입력 텍스트를 그대로 돌려주는 가짜 번역기(네트워크 없이 큐 생성 검증용).
-class _EchoTranslation implements TranslationService {
-  @override
-  Future<List<String>> translateBatch(List<String> texts,
-          {required String target, String? source}) async =>
-      List<String>.from(texts);
 }
 
 void main() {
@@ -95,14 +82,13 @@ void main() {
 
   LiveCaptionController makeController(
     _RecordingExtractor extractor,
-    _FakeSpeech speech, {
+    _FakeCaptionSource caption, {
     Duration window = const Duration(seconds: 10),
     Duration lookahead = const Duration(seconds: 5),
   }) =>
       LiveCaptionController(
         extractor: extractor,
-        speech: speech,
-        cueBuilder: CueBuilder(_EchoTranslation()),
+        caption: caption,
         videoPath: '/video.mp4',
         targetLanguage: 'ko',
         window: window,
@@ -111,10 +97,10 @@ void main() {
 
   test('연속 윈도우: frontier 전진 + 큐 시각 오프셋 보정', () async {
     final extractor = _RecordingExtractor(tmp);
-    final speech = _FakeSpeech();
+    final caption = _FakeCaptionSource();
     final video = _MockVideo();
     final player = PlayerController();
-    final controller = makeController(extractor, speech)..enabled = true;
+    final controller = makeController(extractor, caption)..enabled = true;
     controller.bindForTest(video, player);
     addTearDown(() {
       controller.dispose();
@@ -141,7 +127,8 @@ void main() {
 
   test('앞으로 탐색: 건너뛴 구간은 추출하지 않고 재생 위치부터', () async {
     final extractor = _RecordingExtractor(tmp);
-    final controller = makeController(extractor, _FakeSpeech())..enabled = true;
+    final controller =
+        makeController(extractor, _FakeCaptionSource())..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);
@@ -164,7 +151,8 @@ void main() {
 
   test('뒤로 탐색(이미 처리된 구간): 추가 추출 없음, 큐 유지', () async {
     final extractor = _RecordingExtractor(tmp);
-    final controller = makeController(extractor, _FakeSpeech())..enabled = true;
+    final controller =
+        makeController(extractor, _FakeCaptionSource())..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);
@@ -187,7 +175,7 @@ void main() {
 
   test('토글 OFF: 아무것도 처리하지 않음', () async {
     final extractor = _RecordingExtractor(tmp);
-    final controller = makeController(extractor, _FakeSpeech())
+    final controller = makeController(extractor, _FakeCaptionSource())
       ..enabled = false;
     final video = _MockVideo();
     final player = PlayerController();
@@ -204,7 +192,8 @@ void main() {
 
   test('일시정지: 처리하지 않음', () async {
     final extractor = _RecordingExtractor(tmp);
-    final controller = makeController(extractor, _FakeSpeech())..enabled = true;
+    final controller =
+        makeController(extractor, _FakeCaptionSource())..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);
@@ -219,10 +208,10 @@ void main() {
     expect(extractor.requests, isEmpty);
   });
 
-  test('무음(빈 인식): frontier만 전진, 큐 없음', () async {
+  test('무음(빈 캡션): frontier만 전진, 큐 없음', () async {
     final extractor = _RecordingExtractor(tmp);
-    final speech = _FakeSpeech(result: RecognitionResult.empty);
-    final controller = makeController(extractor, speech)..enabled = true;
+    final caption = _FakeCaptionSource(cues: const <SubtitleCue>[]);
+    final controller = makeController(extractor, caption)..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);
@@ -241,8 +230,8 @@ void main() {
 
   test('에러: status=error, frontier 유지, 임시파일 정리', () async {
     final extractor = _RecordingExtractor(tmp);
-    final speech = _FakeSpeech(error: SpeechException('boom'));
-    final controller = makeController(extractor, speech)..enabled = true;
+    final caption = _FakeCaptionSource(error: CaptionException('boom'));
+    final controller = makeController(extractor, caption)..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);
@@ -261,7 +250,8 @@ void main() {
 
   test('병합 결과는 정렬·비중첩 불변식을 만족(SubtitleSyncEngine 구성)', () async {
     final extractor = _RecordingExtractor(tmp);
-    final controller = makeController(extractor, _FakeSpeech())..enabled = true;
+    final controller =
+        makeController(extractor, _FakeCaptionSource())..enabled = true;
     final video = _MockVideo();
     final player = PlayerController();
     controller.bindForTest(video, player);

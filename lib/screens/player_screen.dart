@@ -60,14 +60,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   Future<void> _start() async {
-    final apiKey = await ref.read(secretsProvider).getApiKey();
-    // Gemini 전용 키(선택). 없으면 기본 Google 번역으로 동작한다.
-    final geminiApiKey = await ref.read(secretsProvider).getGeminiApiKey();
+    // 음성 인식·번역을 모두 Gemini로 처리하므로 AI Studio Gemini 키 하나만 필요하다.
+    final apiKey = await ref.read(secretsProvider).getGeminiApiKey();
     if (!mounted) return;
     if (apiKey == null) {
       setState(() {
         _initFailed = true;
-        _initError = 'API 키가 설정되지 않았습니다. 설정에서 키를 입력하세요.';
+        _initError = 'Gemini API 키가 없습니다. 설정에서 AI Studio 키를 입력하세요.';
       });
       return;
     }
@@ -93,7 +92,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final settings = ref.read(settingsProvider).value;
     final live = ref.read(liveCaptionControllerFactory)((
       apiKey: apiKey,
-      geminiApiKey: geminiApiKey,
       videoPath: widget.source.path,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
