@@ -85,6 +85,30 @@ void main() {
     });
   });
 
+  group('seekDeltaForDrag', () {
+    test('폭 끝까지(+)는 기본 +90초, 절반은 +45초', () {
+      expect(seekDeltaForDrag(400, 400), const Duration(seconds: 90));
+      expect(seekDeltaForDrag(200, 400), const Duration(seconds: 45));
+    });
+
+    test('왼쪽(음수)은 뒤로 이동', () {
+      expect(seekDeltaForDrag(-400, 400), const Duration(seconds: -90));
+      expect(seekDeltaForDrag(-100, 400), const Duration(milliseconds: -22500));
+    });
+
+    test('fullWidthSeek 사용자 지정', () {
+      expect(
+        seekDeltaForDrag(400, 400, fullWidthSeek: const Duration(seconds: 30)),
+        const Duration(seconds: 30),
+      );
+    });
+
+    test('layerWidth가 0 이하이면 0', () {
+      expect(seekDeltaForDrag(100, 0), Duration.zero);
+      expect(seekDeltaForDrag(100, -5), Duration.zero);
+    });
+  });
+
   group('clampScale', () {
     test('범위 1.0~3.0으로 클램프', () {
       expect(clampScale(0.5), 1.0);

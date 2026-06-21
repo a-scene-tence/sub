@@ -270,12 +270,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ..translate(_videoOffset.dx, _videoOffset.dy)
               ..scale(_videoScale),
             child: _fillMode
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    clipBehavior: Clip.hardEdge,
-                    child: SizedBox.fromSize(
-                      size: controller.value.size,
-                      child: VideoPlayer(controller),
+                // SizedBox.expand로 화면 전체 tight 제약을 강제해야 FittedBox가
+                // 영상 비율을 유지하지 않고 cover로 화면을 꽉 채워 잘라낸다.
+                ? SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox.fromSize(
+                        size: controller.value.size,
+                        child: VideoPlayer(controller),
+                      ),
                     ),
                   )
                 : AspectRatio(

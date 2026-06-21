@@ -36,6 +36,20 @@ Duration seekTargetFor(Duration position, Duration duration, Duration delta) {
   return target;
 }
 
+/// 가로 드래그 [dx]px를 탐색 시간으로 환산한다.
+///
+/// 화면 폭 [layerWidth]만큼 끝까지 드래그하면 [fullWidthSeek]만큼 이동(기본 ±90초).
+/// 오른쪽(+dx)=앞으로, 왼쪽(−dx)=뒤로. [layerWidth]가 0 이하이면 0.
+Duration seekDeltaForDrag(
+  double dx,
+  double layerWidth, {
+  Duration fullWidthSeek = const Duration(seconds: 90),
+}) {
+  if (layerWidth <= 0) return Duration.zero;
+  final ms = (dx / layerWidth) * fullWidthSeek.inMilliseconds;
+  return Duration(milliseconds: ms.round());
+}
+
 /// 확대 비율을 [min]~[max]로 클램프한다(핀치 줌).
 double clampScale(double scale, {double min = 1.0, double max = 3.0}) {
   if (scale.isNaN) return min;
