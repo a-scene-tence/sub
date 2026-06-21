@@ -17,6 +17,7 @@ class AppSettings {
     this.subtitleTextColor = const Color(0xFFFFFFFF),
     this.subtitleBgColor = const Color(0xFF000000),
     this.subtitleBgOpacity = 0.6,
+    this.liveTranslateEnabled = false,
   });
 
   /// 번역 대상 언어(ISO-639-1).
@@ -40,6 +41,9 @@ class AppSettings {
   /// 자막 배경 투명도(0.0=투명 ~ 1.0=불투명).
   final double subtitleBgOpacity;
 
+  /// 실시간(라이브) 자막 번역 사용 여부. 기본 OFF(보는 구간만 켜서 API 절약).
+  final bool liveTranslateEnabled;
+
   AppSettings copyWith({
     String? targetLanguage,
     bool? showSource,
@@ -49,6 +53,7 @@ class AppSettings {
     Color? subtitleTextColor,
     Color? subtitleBgColor,
     double? subtitleBgOpacity,
+    bool? liveTranslateEnabled,
   }) {
     return AppSettings(
       targetLanguage: targetLanguage ?? this.targetLanguage,
@@ -58,6 +63,7 @@ class AppSettings {
       subtitleTextColor: subtitleTextColor ?? this.subtitleTextColor,
       subtitleBgColor: subtitleBgColor ?? this.subtitleBgColor,
       subtitleBgOpacity: subtitleBgOpacity ?? this.subtitleBgOpacity,
+      liveTranslateEnabled: liveTranslateEnabled ?? this.liveTranslateEnabled,
     );
   }
 
@@ -69,6 +75,7 @@ class AppSettings {
         'subtitleTextColor': _colorToArgb(subtitleTextColor),
         'subtitleBgColor': _colorToArgb(subtitleBgColor),
         'subtitleBgOpacity': subtitleBgOpacity,
+        'liveTranslateEnabled': liveTranslateEnabled,
       };
 
   /// 저장된 맵에서 복원한다. 누락/오류 필드는 기본값으로 폴백한다.
@@ -88,6 +95,8 @@ class AppSettings {
           : d.subtitleBgColor,
       subtitleBgOpacity:
           (m['subtitleBgOpacity'] as num?)?.toDouble() ?? d.subtitleBgOpacity,
+      liveTranslateEnabled:
+          m['liveTranslateEnabled'] as bool? ?? d.liveTranslateEnabled,
     );
   }
 }
@@ -169,6 +178,11 @@ class SettingsController extends ValueNotifier<AppSettings> {
 
   void setSubtitleBgOpacity(double opacity) {
     value = value.copyWith(subtitleBgOpacity: opacity);
+    _save();
+  }
+
+  void setLiveTranslateEnabled(bool enabled) {
+    value = value.copyWith(liveTranslateEnabled: enabled);
     _save();
   }
 }

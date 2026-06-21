@@ -121,6 +121,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: settings.setShowSource,
             contentPadding: EdgeInsets.zero,
           ),
+          SwitchListTile(
+            title: const Text('실시간 자막 번역'),
+            subtitle: const Text('재생 중 보고 있는 구간만 인식·번역(API 비용 절약)'),
+            value: current.liveTranslateEnabled,
+            onChanged: settings.setLiveTranslateEnabled,
+            contentPadding: EdgeInsets.zero,
+          ),
           const Divider(height: 40),
           const Text('자막 스타일', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),

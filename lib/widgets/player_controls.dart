@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+
+import '../providers.dart';
 
 /// [Duration]을 `mm:ss`(1시간 미만) 또는 `h:mm:ss`로 포맷한다(순수 함수, 테스트 대상).
 String formatDuration(Duration d) {
@@ -13,24 +16,28 @@ String formatDuration(Duration d) {
   return '$mm:$ss';
 }
 
-/// 재생 컨트롤바: play/pause + 탐색 슬라이더 + 시간 라벨.
+/// 재생 컨트롤바: 실시간 번역 토글 + play/pause + 탐색 슬라이더 + 시간 라벨.
 ///
 /// [VideoPlayerController]는 자체가 `ValueListenable<VideoPlayerValue>`라 그것을 구독해
 /// 위치/길이/재생상태를 그린다. 드래그 중에는 로컬값으로 표시하고 손을 뗄 때 `seekTo`한다.
-class PlayerControls extends StatefulWidget {
+/// 실시간 번역 토글은 [settingsProvider]를 읽고 써서 설정 화면과 항상 동기화된다.
+class PlayerControls extends ConsumerStatefulWidget {
   const PlayerControls({super.key, required this.controller});
 
   final VideoPlayerController controller;
 
   @override
-  State<PlayerControls> createState() => _PlayerControlsState();
+  ConsumerState<PlayerControls> createState() => _PlayerControlsState();
 }
 
-class _PlayerControlsState extends State<PlayerControls> {
+class _PlayerControlsState extends ConsumerState<PlayerControls> {
   double? _dragValue;
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final liveOn = settings.value.liveTranslateEnabled;
+
     return ValueListenableBuilder<VideoPlayerValue>(
       valueListenable: widget.controller,
       builder: (context, value, _) {
@@ -48,6 +55,15 @@ class _PlayerControlsState extends State<PlayerControls> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: <Widget>[
+              IconButton(
+                icon: Icon(
+                  liveOn ? Icons.subtitles : Icons.subtitles_off,
+                  color: liveOn ? Colors.lightBlueAccent : Colors.white,
+                ),
+                tooltip: liveOn ? '실시간 자막 끄기' : '실시간 자막 켜기',
+                onPressed: () =>
+                    settings.setLiveTranslateEnabled(!liveOn),
+              ),
               IconButton(
                 icon: Icon(
                   value.isPlaying ? Icons.pause : Icons.play_arrow,

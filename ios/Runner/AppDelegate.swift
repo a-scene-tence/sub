@@ -27,7 +27,13 @@ import UIKit
             result(FlutterError(code: "bad_args", message: "videoPath/outPath 필요", details: nil))
             return
           }
-          AudioExtractor.extractWavAsync(videoPath: videoPath, outPath: outPath, result: result)
+          // startMs/endMs가 있으면 해당 구간만 추출(실시간 자막용), 없으면 전체.
+          let startMs = args["startMs"] as? Int
+          let endMs = args["endMs"] as? Int
+          AudioExtractor.extractWavAsync(
+            videoPath: videoPath, outPath: outPath,
+            startMs: startMs, endMs: endMs, result: result
+          )
         default:
           result(FlutterMethodNotImplemented)
         }

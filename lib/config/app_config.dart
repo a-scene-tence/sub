@@ -26,6 +26,13 @@ class AppConfig {
   /// 50초·48kHz mono 16-bit ≈ 4.8MB(base64 ≈ 6.4MB) < 10MB.
   static const Duration sttChunkDuration = Duration(seconds: 50);
 
+  // --- 실시간(라이브) 자막: 재생 위치를 따라 짧은 구간만 인식·번역 ---
+  /// 한 번에 추출·인식할 윈도우 길이(동기 STT 60초 한도 내, 한 번의 호출로 처리).
+  static const Duration liveWindow = Duration(seconds: 15);
+
+  /// 재생 위치보다 이만큼 앞서 미리 처리해 자막이 제때 보이도록 한다(지연 은닉).
+  static const Duration liveLookahead = Duration(seconds: 5);
+
   // --- 자막 세그먼트 그룹화 규칙 ---
   /// 한 자막 큐의 최대 글자 수(가독성).
   static const int maxSegmentChars = 80;

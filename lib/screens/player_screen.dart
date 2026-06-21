@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
+import '../models/subtitle_cue.dart';
 import '../providers.dart';
+import '../state/live_caption_controller.dart';
 import '../state/player_controller.dart';
-import '../state/processing_controller.dart';
 import '../state/settings_controller.dart';
 import '../widgets/player_controls.dart';
-import '../widgets/processing_indicator.dart';
 import '../widgets/subtitle_overlay.dart';
 import 'settings_screen.dart';
 
@@ -34,7 +34,7 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final PlayerController _player = PlayerController();
-  ProcessingController? _processing;
+  LiveCaptionController? _live;
   VideoPlayerController? _videoController;
   bool _initFailed = false;
   String? _initError;
@@ -72,35 +72,42 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
     if (!mounted) return;
-    setState(() {});
 
-    // 파이프라인 실행.
+    // 실시간 자막 컨트롤러 연결 후 즉시 재생. 자막은 재생을 따라 점진적으로 채워진다.
     final settings = ref.read(settingsProvider).value;
-    final processing = ref.read(processingControllerFactory)(apiKey);
-    _processing = processing;
-    processing.addListener(_onProcessingChanged);
-    await processing.process(
-      widget.source.path,
+    final live = ref.read(liveCaptionControllerFactory)((
+      apiKey: apiKey,
+      videoPath: widget.source.path,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
-    );
+    ));
+    live.enabled = settings.liveTranslateEnabled; // 기본 OFF.
+    _live = live;
+    _player.attach(controller, const <SubtitleCue>[]);
+    live.attach(controller, _player);
+    live.addListener(_onLiveChanged);
+
+    setState(() {});
+    await controller.play();
   }
 
-  void _onProcessingChanged() {
-    final state = _processing?.value;
-    final controller = _videoController;
-    if (state == null || controller == null) return;
-    if (state.status == ProcessingStatus.ready) {
-      _player.attach(controller, state.cues);
-      controller.play();
+  void _onLiveChanged() {
+    final state = _live?.value;
+    if (state != null &&
+        state.status == LiveStatus.error &&
+        state.errorMessage != null) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      messenger?.showSnackBar(
+        SnackBar(content: Text('실시간 자막 오류: ${state.errorMessage}')),
+      );
     }
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _processing?.removeListener(_onProcessingChanged);
-    _processing?.dispose();
+    _live?.removeListener(_onLiveChanged);
+    _live?.dispose();
     _player.dispose();
     super.dispose();
   }
@@ -108,8 +115,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider).value;
+    // 설정의 토글을 컨트롤러에 동기화(불리언 대입, 멱등 — 다음 tick이 반영).
+    _live?.enabled = settings.liveTranslateEnabled;
     final controller = _videoController;
-    final processingState = _processing?.value ?? const ProcessingState();
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -124,15 +132,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
         ],
       ),
-      body: _buildBody(controller, processingState, settings),
+      body: _buildBody(controller, settings),
     );
   }
 
-  Widget _buildBody(
-    VideoPlayerController? controller,
-    ProcessingState processingState,
-    AppSettings settings,
-  ) {
+  Widget _buildBody(VideoPlayerController? controller, AppSettings settings) {
     if (_initFailed) {
       return Center(
         child: Padding(
@@ -153,6 +157,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     final bgColor = settings.subtitleBgColor
         .withValues(alpha: settings.subtitleBgOpacity);
+    final isWorking = _live?.value.status == LiveStatus.working;
 
     return Column(
       children: <Widget>[
@@ -177,9 +182,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     ),
                   ),
                 ),
-                Positioned.fill(
-                  child: ProcessingIndicator(state: processingState),
-                ),
+                // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
+                if (isWorking)
+                  const Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _LiveBadge(),
+                  ),
               ],
             ),
           ),
@@ -190,6 +199,40 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           child: PlayerControls(controller: controller),
         ),
       ],
+    );
+  }
+}
+
+/// 실시간 인식 진행 중을 알리는 작은 표식.
+class _LiveBadge extends StatelessWidget {
+  const _LiveBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.lightBlueAccent,
+            ),
+          ),
+          SizedBox(width: 8),
+          Text(
+            '실시간 인식 중…',
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }

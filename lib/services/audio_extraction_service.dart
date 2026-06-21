@@ -13,7 +13,9 @@ class AudioExtractionException implements Exception {
 
 /// 오디오 추출 추상 인터페이스(파이프라인 테스트 시 목으로 대체).
 abstract class AudioExtractor {
-  Future<File> extractWav(String videoPath);
+  /// [videoPath]에서 WAV를 추출한다. [start]/[end]를 주면 그 시간 구간만 추출하고
+  /// (실시간 자막용), 둘 다 null이면 전체를 추출한다.
+  Future<File> extractWav(String videoPath, {Duration? start, Duration? end});
   Future<void> cleanup(File file);
 }
 
@@ -31,20 +33,26 @@ class AudioExtractionService implements AudioExtractor {
   final MethodChannel _channel;
 
   /// [videoPath](로컬 파일 경로 또는 http(s) URL)에서 WAV를 추출해 생성된 임시 파일을
-  /// 반환한다. 호출자는 사용 후 [cleanup]으로 정리한다.
+  /// 반환한다. [start]/[end]가 있으면 해당 구간만 추출한다(둘 다 null이면 전체).
+  /// 호출자는 사용 후 [cleanup]으로 정리한다.
   @override
-  Future<File> extractWav(String videoPath) async {
+  Future<File> extractWav(String videoPath,
+      {Duration? start, Duration? end}) async {
     final tmpDir = await getTemporaryDirectory();
     final outPath = p.join(
       tmpDir.path,
-      'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
+      'audio_${DateTime.now().microsecondsSinceEpoch}.wav',
     );
 
     try {
-      await _channel.invokeMethod<Map<dynamic, dynamic>>('extractWav', {
+      // 윈도우가 없으면 키 자체를 빼서 네이티브가 전체 추출하도록 한다(하위 호환).
+      final args = <String, dynamic>{
         'videoPath': videoPath,
         'outPath': outPath,
-      });
+      };
+      if (start != null) args['startMs'] = start.inMilliseconds;
+      if (end != null) args['endMs'] = end.inMilliseconds;
+      await _channel.invokeMethod<Map<dynamic, dynamic>>('extractWav', args);
     } on PlatformException catch (e) {
       throw AudioExtractionException('오디오 추출 실패: ${e.message ?? e.code}');
     } on MissingPluginException {

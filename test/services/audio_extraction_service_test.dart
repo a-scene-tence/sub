@@ -50,9 +50,29 @@ void main() {
 
     expect(receivedArgs!['videoPath'], '/video/in.mp4');
     expect(receivedArgs!['outPath'], startsWith(tmp.path));
+    // 전체 추출이면 윈도우 키를 보내지 않는다(네이티브 하위 호환).
+    expect(receivedArgs!.containsKey('startMs'), isFalse);
+    expect(receivedArgs!.containsKey('endMs'), isFalse);
     expect(p.extension(file.path), '.wav');
     expect(file.existsSync(), isTrue);
     expect(file.lengthSync(), 100);
+  });
+
+  test('extractWav: 구간 추출 시 startMs/endMs 전달', () async {
+    Map<dynamic, dynamic>? receivedArgs;
+    messenger.setMockMethodCallHandler(audioChannel, (call) async {
+      receivedArgs = call.arguments as Map<dynamic, dynamic>;
+      File(receivedArgs!['outPath'] as String)
+          .writeAsBytesSync(List<int>.filled(50, 0));
+      return <String, dynamic>{'sampleRate': 16000};
+    });
+
+    final service = AudioExtractionService(channel: audioChannel);
+    await service.extractWav('/video/in.mp4',
+        start: const Duration(seconds: 5), end: const Duration(seconds: 20));
+
+    expect(receivedArgs!['startMs'], 5000);
+    expect(receivedArgs!['endMs'], 20000);
   });
 
   test('extractWav: 빈 파일이면 AudioExtractionException', () async {

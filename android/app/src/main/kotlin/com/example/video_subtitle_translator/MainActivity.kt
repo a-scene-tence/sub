@@ -26,7 +26,12 @@ class MainActivity : FlutterActivity() {
                             result.error("bad_args", "videoPath/outPath 필요", null)
                             return@setMethodCallHandler
                         }
-                        AudioExtractor.extractWavAsync(videoPath, outPath, result)
+                        // startMs/endMs가 있으면 해당 구간만 추출(실시간 자막용), 없으면 전체.
+                        val startMs = call.argument<Int>("startMs")
+                        val endMs = call.argument<Int>("endMs")
+                        AudioExtractor.extractWavAsync(
+                            videoPath, outPath, startMs, endMs, result
+                        )
                     }
                     else -> result.notImplemented()
                 }

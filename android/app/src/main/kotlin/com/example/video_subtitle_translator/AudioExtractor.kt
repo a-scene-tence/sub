@@ -21,11 +21,22 @@ object AudioExtractor {
     private const val TIMEOUT_US = 10_000L
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /** 백그라운드 스레드에서 추출하고 메인 스레드로 [result]를 회신한다. */
-    fun extractWavAsync(videoPath: String, outPath: String, result: MethodChannel.Result) {
+    /**
+     * 백그라운드 스레드에서 추출하고 메인 스레드로 [result]를 회신한다.
+     *
+     * [startMs]/[endMs]가 주어지면 그 시간 구간만 추출한다(실시간 자막용). 둘 다 null이면
+     * 전체를 추출한다.
+     */
+    fun extractWavAsync(
+        videoPath: String,
+        outPath: String,
+        startMs: Int?,
+        endMs: Int?,
+        result: MethodChannel.Result
+    ) {
         Thread {
             try {
-                val info = extract(videoPath, outPath)
+                val info = extract(videoPath, outPath, startMs, endMs)
                 mainHandler.post { result.success(info) }
             } catch (e: Throwable) {
                 mainHandler.post {
@@ -35,7 +46,12 @@ object AudioExtractor {
         }.start()
     }
 
-    private fun extract(videoPath: String, outPath: String): Map<String, Any> {
+    private fun extract(
+        videoPath: String,
+        outPath: String,
+        startMs: Int?,
+        endMs: Int?
+    ): Map<String, Any> {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         val raf = RandomAccessFile(outPath, "rw")
@@ -61,6 +77,13 @@ object AudioExtractor {
             }
             extractor.selectTrack(trackIndex)
 
+            // 구간 추출: 시작 지점으로 시킹(가장 가까운 sync 샘플). 약간 앞 샘플에 안착할
+            // 수 있으나 호출자가 윈도우 시작을 명목값으로 보정한다.
+            if (startMs != null && startMs > 0) {
+                extractor.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            }
+            val endUs = if (endMs != null) endMs * 1000L else -1L
+
             val mime = inputFormat.getString(MediaFormat.KEY_MIME)!!
             codec = MediaCodec.createDecoderByType(mime).apply {
                 configure(inputFormat, null, null, 0)
@@ -82,7 +105,11 @@ object AudioExtractor {
                     if (inIndex >= 0) {
                         val inBuf = codec.getInputBuffer(inIndex)!!
                         val sampleSize = extractor.readSampleData(inBuf, 0)
-                        if (sampleSize < 0) {
+                        // 구간 끝(endUs)에 도달했거나 트랙이 끝나면 입력 종료.
+                        val pastEnd = endUs >= 0L &&
+                            extractor.sampleTime >= 0L &&
+                            extractor.sampleTime >= endUs
+                        if (sampleSize < 0 || pastEnd) {
                             codec.queueInputBuffer(
                                 inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM
                             )

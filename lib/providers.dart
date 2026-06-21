@@ -5,7 +5,7 @@ import 'services/audio_extraction_service.dart';
 import 'services/cue_builder.dart';
 import 'services/speech_service.dart';
 import 'services/translation_service.dart';
-import 'state/processing_controller.dart';
+import 'state/live_caption_controller.dart';
 import 'state/settings_controller.dart';
 
 /// API 키 공급자.
@@ -20,20 +20,26 @@ final apiKeyProvider = FutureProvider<String?>((ref) {
   return ref.watch(secretsProvider).getApiKey();
 });
 
-/// 주어진 API 키로 자막 파이프라인 컨트롤러를 만든다.
+/// 라이브 자막 컨트롤러 생성 인자.
+typedef LiveArgs = ({
+  String apiKey,
+  String videoPath,
+  String targetLanguage,
+  String? languageHint,
+});
+
+/// 실시간(라이브) 자막 컨트롤러를 만든다.
 ///
-/// 화면에서 키를 읽은 뒤 `ref.read(processingControllerFactory)(key)`로 생성한다.
-final processingControllerFactory =
-    Provider<ProcessingController Function(String apiKey)>((ref) {
-  return (String apiKey) {
-    // 긴 영상도 지원하도록 동기 STT를 파일 스트리밍 청크 인식기로 감싼다(API 키 인증 유지).
-    final recognizer =
-        ChunkedSpeechRecognizer(GoogleSpeechService(apiKey: apiKey));
-    final translation = GoogleTranslationService(apiKey: apiKey);
-    return ProcessingController(
-      audioExtractor: AudioExtractionService(),
-      recognizer: recognizer,
-      cueBuilder: CueBuilder(translation),
-    );
-  };
+/// 화면에서 키/영상 경로/설정을 읽은 뒤 `ref.read(liveCaptionControllerFactory)(args)`로
+/// 생성한다. 윈도우(≤15초)는 한 번의 동기 호출로 처리되므로 청크 인식기는 쓰지 않는다.
+final liveCaptionControllerFactory =
+    Provider<LiveCaptionController Function(LiveArgs)>((ref) {
+  return (LiveArgs a) => LiveCaptionController(
+        extractor: AudioExtractionService(),
+        speech: GoogleSpeechService(apiKey: a.apiKey),
+        cueBuilder: CueBuilder(GoogleTranslationService(apiKey: a.apiKey)),
+        videoPath: a.videoPath,
+        targetLanguage: a.targetLanguage,
+        languageHint: a.languageHint,
+      );
 });

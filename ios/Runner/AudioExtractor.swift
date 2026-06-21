@@ -9,10 +9,17 @@ import Foundation
 /// `AVNumberOfChannelsKey = 1`로 멀티채널을 mono 다운믹스한다.
 enum AudioExtractor {
   /// 백그라운드 큐에서 추출하고 메인 큐로 [result]를 회신한다.
-  static func extractWavAsync(videoPath: String, outPath: String, result: @escaping FlutterResult) {
+  ///
+  /// [startMs]/[endMs]가 주어지면 그 시간 구간만 추출한다(실시간 자막용). 둘 다 nil이면 전체.
+  static func extractWavAsync(
+    videoPath: String, outPath: String,
+    startMs: Int?, endMs: Int?, result: @escaping FlutterResult
+  ) {
     DispatchQueue.global(qos: .userInitiated).async {
       do {
-        let info = try extract(videoPath: videoPath, outPath: outPath)
+        let info = try extract(
+          videoPath: videoPath, outPath: outPath, startMs: startMs, endMs: endMs
+        )
         DispatchQueue.main.async { result(info) }
       } catch {
         DispatchQueue.main.async {
@@ -31,7 +38,9 @@ enum AudioExtractor {
     var errorDescription: String? { message }
   }
 
-  private static func extract(videoPath: String, outPath: String) throws -> [String: Any] {
+  private static func extract(
+    videoPath: String, outPath: String, startMs: Int?, endMs: Int?
+  ) throws -> [String: Any] {
     let url: URL
     if let parsed = URL(string: videoPath), let scheme = parsed.scheme,
        scheme == "http" || scheme == "https" {
@@ -55,6 +64,14 @@ enum AudioExtractor {
     }
 
     let reader = try AVAssetReader(asset: asset)
+    // 구간 추출: timeRange는 프레임 정확하므로 시킹 드리프트가 없다.
+    if let startMs = startMs {
+      let start = CMTime(value: CMTimeValue(startMs), timescale: 1000)
+      let dur: CMTime = endMs != nil
+        ? CMTime(value: CMTimeValue(max(0, endMs! - startMs)), timescale: 1000)
+        : CMTime.positiveInfinity
+      reader.timeRange = CMTimeRange(start: start, duration: dur)
+    }
     let settings: [String: Any] = [
       AVFormatIDKey: kAudioFormatLinearPCM,
       AVLinearPCMBitDepthKey: 16,
