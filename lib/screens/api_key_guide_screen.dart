@@ -28,7 +28,7 @@ class ApiKeyGuideScreen extends StatelessWidget {
             title: '2. 필요한 API 사용 설정',
             body: '“API 및 서비스 > 라이브러리”에서 아래 세 가지를 검색해 “사용 설정”합니다.\n'
                 '• Cloud Speech-to-Text API (음성 인식)\n'
-                '• Generative Language API (Gemini, 자연스러운 번역)\n'
+                '• Gemini API (자연스러운 번역)\n'
                 '• Cloud Translation API (번역 폴백)',
           ),
           _Section(
@@ -38,7 +38,7 @@ class ApiKeyGuideScreen extends StatelessWidget {
           ),
           _Section(
             title: '4. (권장) 키 제한하기',
-            body: '생성된 키를 눌러 “API 제한”에서 Speech-to-Text, Generative Language, '
+            body: '생성된 키를 눌러 “API 제한”에서 Speech-to-Text, Gemini, '
                 'Translation API로만 사용을 제한하세요. 키가 유출돼도 피해를 줄일 수 있습니다.',
           ),
           _Section(
@@ -49,7 +49,7 @@ class ApiKeyGuideScreen extends StatelessWidget {
           _Section(
             title: '비용 안내',
             body: 'Speech-to-Text는 인식한 오디오 “분(minute)” 단위로 과금됩니다. 번역은 '
-                '기본적으로 Gemini(Generative Language API)로 자연스럽게 번역하고, 실패 시 '
+                '기본적으로 Gemini API로 자연스럽게 번역하고, 실패 시 '
                 'Cloud Translation(문자 수 단위 과금)으로 자동 폴백합니다.\n\n'
                 '무료 사용량(2026년 6월 기준, 참고용):\n'
                 '• 음성 인식: 월 약 60분\n'
