@@ -26,10 +26,10 @@ class ApiKeyGuideScreen extends StatelessWidget {
           ),
           _Section(
             title: '2. 필요한 API 사용 설정',
-            body: '“API 및 서비스 > 라이브러리”에서 아래 세 가지를 검색해 “사용 설정”합니다.\n'
+            body: '“API 및 서비스 > 라이브러리”에서 아래 두 가지를 검색해 “사용 설정”합니다.\n'
                 '• Cloud Speech-to-Text API (음성 인식)\n'
-                '• Gemini API (자연스러운 번역)\n'
-                '• Cloud Translation API (번역 폴백)',
+                '• Cloud Translation API (번역)\n\n'
+                '자연스러운 구어체 번역(Gemini)은 아래 6번에서 별도 키로 설정합니다.',
           ),
           _Section(
             title: '3. API 키 만들기',
@@ -37,9 +37,10 @@ class ApiKeyGuideScreen extends StatelessWidget {
                 '“사용자 인증 정보 만들기 > API 키”를 선택하면 키가 생성됩니다.',
           ),
           _Section(
-            title: '4. (권장) 키 제한하기',
-            body: '생성된 키를 눌러 “API 제한”에서 Speech-to-Text, Gemini, '
-                'Translation API로만 사용을 제한하세요. 키가 유출돼도 피해를 줄일 수 있습니다.',
+            title: '4. 키 제한하기 (필수)',
+            body: '생성된 키를 눌러 “API 제한”에서 Speech-to-Text, Translation API로만 '
+                '사용을 제한하세요. 2026년 6월부터 제한이 전혀 없는 키는 거부될 수 있으므로 '
+                '반드시 제한을 설정해야 합니다.',
           ),
           _Section(
             title: '5. 앱에 키 입력하기',
@@ -47,10 +48,18 @@ class ApiKeyGuideScreen extends StatelessWidget {
                 '“키 저장”을 누르면 됩니다.',
           ),
           _Section(
+            title: '6. (선택) 자연스러운 번역용 Gemini 키',
+            body: 'Google 정책상 위에서 만든 Cloud 키로는 Gemini를 쓸 수 없습니다. 더 자연스러운 '
+                '구어체 번역을 원하면 Google AI Studio에서 “Gemini API” 키를 따로 발급해 '
+                '“설정 > Gemini API 키 (선택)” 입력란에 넣으세요. 넣지 않으면 기본 Google '
+                '번역으로 자막이 정상 표시됩니다.',
+            url: 'https://aistudio.google.com/apikey',
+          ),
+          _Section(
             title: '비용 안내',
             body: 'Speech-to-Text는 인식한 오디오 “분(minute)” 단위로 과금됩니다. 번역은 '
-                '기본적으로 Gemini API로 자연스럽게 번역하고, 실패 시 '
-                'Cloud Translation(문자 수 단위 과금)으로 자동 폴백합니다.\n\n'
+                'Gemini 키를 넣었으면 Gemini로 자연스럽게 번역하고, 넣지 않았으면 '
+                'Cloud Translation(문자 수 단위 과금)을 사용합니다.\n\n'
                 '무료 사용량(2026년 6월 기준, 참고용):\n'
                 '• 음성 인식: 월 약 60분\n'
                 '• 번역: 월 약 500,000자\n\n'

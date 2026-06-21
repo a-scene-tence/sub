@@ -17,7 +17,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _keyController = TextEditingController();
+  final TextEditingController _geminiKeyController = TextEditingController();
   bool _saving = false;
+  bool _savingGemini = false;
   int? _cacheBytes; // null = 계산 중.
   bool _clearing = false;
 
@@ -30,6 +32,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void dispose() {
     _keyController.dispose();
+    _geminiKeyController.dispose();
     super.dispose();
   }
 
@@ -74,11 +77,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// Gemini 전용 키 저장. 입력이 비어 있으면 저장된 키를 제거(기본 번역으로 복귀).
+  Future<void> _saveGeminiKey() async {
+    final key = _geminiKeyController.text.trim();
+    setState(() => _savingGemini = true);
+    try {
+      final secrets = ref.read(secretsProvider);
+      if (key.isEmpty) {
+        await secrets.clearGeminiApiKey();
+      } else {
+        await secrets.setGeminiApiKey(key);
+      }
+      ref.invalidate(geminiApiKeyProvider);
+      if (!mounted) return;
+      _geminiKeyController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(key.isEmpty ? 'Gemini 키를 제거했습니다.' : 'Gemini 키를 저장했습니다.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gemini 키 저장 실패: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _savingGemini = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final current = settings.value;
     final hasKey = ref.watch(apiKeyProvider).valueOrNull != null;
+    final hasGeminiKey = ref.watch(geminiApiKeyProvider).valueOrNull != null;
 
     // 대상 언어 후보(언어명 표시).
     const targets = <String>['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de'];
@@ -118,6 +149,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             icon: const Icon(Icons.help_outline),
             label: const Text('API 키 발급 방법'),
+          ),
+          const Divider(height: 40),
+          const Text('Gemini API 키 (선택)',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            hasGeminiKey ? '키가 저장되어 있습니다.' : '미설정 — 기본 Google 번역 사용.',
+            style: TextStyle(color: hasGeminiKey ? Colors.green : Colors.grey),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '없어도 자막은 나옵니다. Google AI Studio에서 발급한 Gemini 키를 넣으면 '
+            '더 자연스러운 구어체로 번역됩니다. (일반 Cloud 키로는 Gemini를 쓸 수 없습니다.)',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _geminiKeyController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Gemini 키 입력(비우고 저장하면 제거)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _savingGemini ? null : _saveGeminiKey,
+            child: Text(_savingGemini ? '저장 중…' : 'Gemini 키 저장'),
           ),
           const Divider(height: 40),
           const Text('번역 대상 언어', style: TextStyle(fontWeight: FontWeight.bold)),

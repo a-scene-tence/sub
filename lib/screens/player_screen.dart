@@ -61,6 +61,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _start() async {
     final apiKey = await ref.read(secretsProvider).getApiKey();
+    // Gemini 전용 키(선택). 없으면 기본 Google 번역으로 동작한다.
+    final geminiApiKey = await ref.read(secretsProvider).getGeminiApiKey();
     if (!mounted) return;
     if (apiKey == null) {
       setState(() {
@@ -91,6 +93,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final settings = ref.read(settingsProvider).value;
     final live = ref.read(liveCaptionControllerFactory)((
       apiKey: apiKey,
+      geminiApiKey: geminiApiKey,
       videoPath: widget.source.path,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
