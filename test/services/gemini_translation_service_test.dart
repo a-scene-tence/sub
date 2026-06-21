@@ -121,6 +121,9 @@ void main() {
       final gc = sent['generationConfig'] as Map<String, dynamic>;
       expect((gc['responseSchema'] as Map)['type'], 'ARRAY');
       expect(gc['responseMimeType'], 'application/json');
+      // 비용 최소화: thinking 비활성 + 출력 상한이 요청에 포함된다.
+      expect((gc['thinkingConfig'] as Map)['thinkingBudget'], 0);
+      expect(gc['maxOutputTokens'], isA<int>());
       final userText = ((sent['contents'] as List).first as Map)['parts'][0]
           ['text'] as String;
       expect(userText, jsonEncode(<String>['hi', 'how are you today?']));

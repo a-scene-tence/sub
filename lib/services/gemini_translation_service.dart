@@ -60,6 +60,13 @@ class GeminiTranslationService implements TranslationService {
           'items': <String, String>{'type': 'STRING'},
         },
         'temperature': 0.3,
+        // 비용 최소화: 자막 번역엔 추론(thinking)이 불필요하다. gemini-2.5-flash는
+        // 기본적으로 thinking이 켜져 있고 그 토큰이 '출력' 단가로 과금되며 지연도 늘린다.
+        // 0으로 꺼서 토큰·비용·지연을 모두 줄인다.
+        'thinkingConfig': <String, dynamic>{'thinkingBudget': 0},
+        // 출력 상한: 번역문은 입력과 비슷한 길이이므로, 정상 번역은 잘리지 않을 만큼
+        // 넉넉히 두되 비정상적인 폭주 응답의 비용을 막는다.
+        'maxOutputTokens': _maxOutputTokensFor(texts),
       },
     };
 
@@ -81,6 +88,13 @@ class GeminiTranslationService implements TranslationService {
     }
 
     return parseGeminiTranslateResponse(resp.body, expected: texts.length);
+  }
+
+  /// 출력 토큰 상한을 입력 길이에 비례해 넉넉히 잡는다. 토큰≈문자수의 보수적 배수에
+  /// 여유분을 더해, 정상 번역은 절대 잘리지 않으면서 폭주 비용만 차단한다.
+  static int _maxOutputTokensFor(List<String> texts) {
+    final chars = texts.fold<int>(0, (sum, t) => sum + t.length);
+    return chars * 3 + 512;
   }
 
   String _errorMessage(String body) {
