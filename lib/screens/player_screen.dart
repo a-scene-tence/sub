@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/subtitle_cue.dart';
 import '../providers.dart';
+import '../services/cache_cleaner.dart';
 import '../state/live_caption_controller.dart';
 import '../state/player_controller.dart';
 import '../state/settings_controller.dart';
@@ -39,6 +42,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   VideoPlayerController? _videoController;
   bool _initFailed = false;
   String? _initError;
+  bool _isFullscreen = false;
 
   @override
   void initState() {
@@ -90,6 +94,22 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     setState(() {});
     await controller.play();
+    // 재생 중 화면 꺼짐 방지.
+    await WakelockPlus.enable();
+  }
+
+  void _toggleFullscreen() {
+    setState(() => _isFullscreen = !_isFullscreen);
+    if (_isFullscreen) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setPreferredOrientations(const <DeviceOrientation>[]);
+    }
   }
 
   void _onLiveChanged() {
@@ -109,7 +129,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   void dispose() {
     _live?.removeListener(_onLiveChanged);
     _live?.dispose();
-    _player.dispose();
+
+    // 시스템 UI/방향 복원(전체화면 상태로 화면을 떠나도 원복) + 화면 꺼짐 방지 해제.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(const <DeviceOrientation>[]);
+    WakelockPlus.disable();
+
+    // 영상 컨트롤러 정리 후 file_picker 캐시 사본 삭제(원본은 임시 디렉터리 밖이라 보호됨).
+    final localPath = widget.source.isNetwork ? null : widget.source.path;
+    _player.dispose().then((_) {
+      if (localPath != null) CacheCleaner.deleteIfTemp(localPath);
+    });
     super.dispose();
   }
 
@@ -122,17 +152,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        title: const Text('재생'),
-        actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+      // 전체화면에서는 AppBar를 숨겨 영상이 화면을 가득 채운다.
+      appBar: _isFullscreen
+          ? null
+          : AppBar(
+              title: const Text('재생'),
+              actions: <Widget>[
+                IconButton(
+                  icon: const Icon(Icons.settings),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const SettingsScreen()),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       body: _buildBody(controller, settings),
     );
   }
@@ -201,7 +235,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // 하단 시스템 내비게이션 바와 겹치지 않도록 인셋을 확보한다.
         SafeArea(
           top: false,
-          child: PlayerControls(controller: controller),
+          child: PlayerControls(
+            controller: controller,
+            isFullscreen: _isFullscreen,
+            onToggleFullscreen: _toggleFullscreen,
+          ),
         ),
       ],
     );

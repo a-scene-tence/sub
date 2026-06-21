@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'services/cache_cleaner.dart';
 import 'services/diagnostics.dart';
 
 Future<void> main() async {
@@ -21,6 +22,8 @@ Future<void> main() async {
     } catch (_) {
       // .env 파일이 없어도 앱은 동작한다(설정 화면에서 키 입력).
     }
+    // 이전 실행에서 남은 임시 산출물(file_picker 영상 사본·오디오 WAV) 정리.
+    await CacheCleaner.purgeOnStartup();
     runApp(const ProviderScope(child: VideoSubtitleTranslatorApp()));
   }, (Object error, StackTrace stack) {
     Diagnostics.record('Uncaught: $error');

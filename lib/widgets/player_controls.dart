@@ -22,9 +22,16 @@ String formatDuration(Duration d) {
 /// 위치/길이/재생상태를 그린다. 드래그 중에는 로컬값으로 표시하고 손을 뗄 때 `seekTo`한다.
 /// 실시간 번역 토글은 [settingsProvider]를 읽고 써서 설정 화면과 항상 동기화된다.
 class PlayerControls extends ConsumerStatefulWidget {
-  const PlayerControls({super.key, required this.controller});
+  const PlayerControls({
+    super.key,
+    required this.controller,
+    required this.isFullscreen,
+    required this.onToggleFullscreen,
+  });
 
   final VideoPlayerController controller;
+  final bool isFullscreen;
+  final VoidCallback onToggleFullscreen;
 
   @override
   ConsumerState<PlayerControls> createState() => _PlayerControlsState();
@@ -98,6 +105,16 @@ class _PlayerControlsState extends ConsumerState<PlayerControls> {
               Text(
                 formatDuration(duration),
                 style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              IconButton(
+                icon: Icon(
+                  widget.isFullscreen
+                      ? Icons.fullscreen_exit
+                      : Icons.fullscreen,
+                  color: Colors.white,
+                ),
+                tooltip: widget.isFullscreen ? '전체화면 종료' : '전체화면',
+                onPressed: widget.onToggleFullscreen,
               ),
             ],
           ),

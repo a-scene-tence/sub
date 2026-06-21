@@ -34,6 +34,8 @@ dependencies:
   # 재생 제스처: 화면 밝기(앱 윈도우) / 시스템 볼륨 제어
   screen_brightness: ^1.0.1
   volume_controller: ^2.0.7
+  # 재생 중 화면 꺼짐 방지(전체화면/긴 영상)
+  wakelock_plus: ^1.2.5
 
 dev_dependencies:
   flutter_test:

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../providers.dart';
+import '../services/cache_cleaner.dart';
 import '../services/language_codes.dart';
 import '../state/settings_controller.dart';
 import 'api_key_guide_screen.dart';
@@ -17,11 +18,38 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final TextEditingController _keyController = TextEditingController();
   bool _saving = false;
+  int? _cacheBytes; // null = 계산 중.
+  bool _clearing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCacheSize();
+  }
 
   @override
   void dispose() {
     _keyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadCacheSize() async {
+    final bytes = await CacheCleaner.cacheSizeBytes();
+    if (mounted) setState(() => _cacheBytes = bytes);
+  }
+
+  Future<void> _clearCache() async {
+    setState(() => _clearing = true);
+    try {
+      await CacheCleaner.clearCache();
+      await _loadCacheSize();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('캐시를 비웠습니다.')),
+      );
+    } finally {
+      if (mounted) setState(() => _clearing = false);
+    }
   }
 
   Future<void> _saveKey() async {
@@ -176,6 +204,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             divisions: 20,
             label: '${(current.subtitleBgOpacity * 100).round()}%',
             onChanged: settings.setSubtitleBgOpacity,
+          ),
+          const Divider(height: 40),
+          const Text('저장공간', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(
+            '캐시 사용량: '
+            '${_cacheBytes == null ? '계산 중…' : formatBytes(_cacheBytes!)}',
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '영상 선택 시 임시로 복사된 파일과 음성 인식용 임시 파일을 정리합니다.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _clearing ? null : _clearCache,
+            icon: const Icon(Icons.delete_outline),
+            label: Text(_clearing ? '비우는 중…' : '캐시 비우기'),
           ),
         ],
       ),
