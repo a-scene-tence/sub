@@ -2,7 +2,7 @@
     <!-- Google STT/번역 API 호출 및 네트워크 영상 재생에 필요 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="video_subtitle_translator"
+        android:label="인프레임"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

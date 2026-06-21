@@ -8,7 +8,7 @@ class VideoSubtitleTranslatorApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '영상 번역 자막',
+      title: '인프레임',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3B6EF6)),
