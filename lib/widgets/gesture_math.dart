@@ -1,5 +1,8 @@
 // 재생 제스처의 순수 계산 로직(플러그인/부수효과 없음 → 단위 테스트 대상).
 
+import 'dart:math' as math;
+import 'dart:ui' show Offset, Size;
+
 /// 탭/드래그가 레이어의 좌/우 절반 중 어디에 속하는지.
 enum GestureSide { left, right }
 
@@ -31,4 +34,24 @@ Duration seekTargetFor(Duration position, Duration duration, Duration delta) {
   if (target < Duration.zero) target = Duration.zero;
   if (target > duration) target = duration;
   return target;
+}
+
+/// 확대 비율을 [min]~[max]로 클램프한다(핀치 줌).
+double clampScale(double scale, {double min = 1.0, double max = 3.0}) {
+  if (scale.isNaN) return min;
+  return scale.clamp(min, max);
+}
+
+/// 확대 상태에서 콘텐츠가 화면 밖으로 빠지지 않도록 팬 오프셋을 제한한다.
+///
+/// 중앙 정렬·[scale]배 확대 기준, 각 축으로 넘칠 수 있는 최대치는
+/// `viewport*(scale-1)/2`이다. `scale<=1`이면 이동 불가(0으로 고정).
+Offset clampOffset(Offset offset, double scale, Size viewport) {
+  if (scale <= 1) return Offset.zero;
+  final maxX = math.max(0.0, viewport.width * (scale - 1) / 2);
+  final maxY = math.max(0.0, viewport.height * (scale - 1) / 2);
+  return Offset(
+    offset.dx.clamp(-maxX, maxX),
+    offset.dy.clamp(-maxY, maxY),
+  );
 }

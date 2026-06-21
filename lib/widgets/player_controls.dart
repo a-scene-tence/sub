@@ -27,11 +27,15 @@ class PlayerControls extends ConsumerStatefulWidget {
     required this.controller,
     required this.isFullscreen,
     required this.onToggleFullscreen,
+    required this.isFill,
+    required this.onToggleFill,
   });
 
   final VideoPlayerController controller;
   final bool isFullscreen;
   final VoidCallback onToggleFullscreen;
+  final bool isFill;
+  final VoidCallback onToggleFill;
 
   @override
   ConsumerState<PlayerControls> createState() => _PlayerControlsState();
@@ -106,6 +110,16 @@ class _PlayerControlsState extends ConsumerState<PlayerControls> {
                 formatDuration(duration),
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
+              // 비율 전환은 전체화면에서만 노출(세로 모드 컨트롤바 과밀 방지).
+              if (widget.isFullscreen)
+                IconButton(
+                  icon: Icon(
+                    widget.isFill ? Icons.fit_screen : Icons.aspect_ratio,
+                    color: Colors.white,
+                  ),
+                  tooltip: widget.isFill ? '화면 맞춤' : '꽉 채움',
+                  onPressed: widget.onToggleFill,
+                ),
               IconButton(
                 icon: Icon(
                   widget.isFullscreen

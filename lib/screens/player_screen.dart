@@ -43,6 +43,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _initFailed = false;
   String? _initError;
   bool _isFullscreen = false;
+  double _videoScale = 1.0; // 핀치 줌(전체화면).
+  Offset _videoOffset = Offset.zero; // 줌 상태 팬.
+  bool _fillMode = false; // 맞춤 ↔ 꽉 채움.
 
   @override
   void initState() {
@@ -99,7 +102,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 
   void _toggleFullscreen() {
-    setState(() => _isFullscreen = !_isFullscreen);
+    setState(() {
+      _isFullscreen = !_isFullscreen;
+      if (!_isFullscreen) {
+        // 전체화면 해제 시 확대/팬/채움 리셋.
+        _videoScale = 1.0;
+        _videoOffset = Offset.zero;
+        _fillMode = false;
+      }
+    });
     if (_isFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations(const <DeviceOrientation>[
@@ -110,6 +121,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations(const <DeviceOrientation>[]);
     }
+  }
+
+  void _toggleFill() {
+    setState(() {
+      _fillMode = !_fillMode;
+      // 비율을 바꾸면 핀치 줌/팬은 초기화(혼란 방지).
+      _videoScale = 1.0;
+      _videoOffset = Offset.zero;
+    });
   }
 
   void _onLiveChanged() {
@@ -197,39 +217,65 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Column(
       children: <Widget>[
         Expanded(
-          child: Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                AspectRatio(
-                  aspectRatio: controller.value.aspectRatio,
-                  child: VideoPlayer(controller),
+          // 전체 영역을 채우는 Stack: 영상은 가운데에서 확대/축소·팬·핏 적용,
+          // 제스처 레이어는 레터박스 위에서도 동작하도록 전체를 덮는다.
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Center(
+                child: Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..translate(_videoOffset.dx, _videoOffset.dy)
+                    ..scale(_videoScale),
+                  child: _fillMode
+                      ? FittedBox(
+                          fit: BoxFit.cover,
+                          clipBehavior: Clip.hardEdge,
+                          child: SizedBox.fromSize(
+                            size: controller.value.size,
+                            child: VideoPlayer(controller),
+                          ),
+                        )
+                      : AspectRatio(
+                          aspectRatio: controller.value.aspectRatio,
+                          child: VideoPlayer(controller),
+                        ),
                 ),
-                Positioned.fill(
-                  child: ValueListenableBuilder(
-                    valueListenable: _player.activeCue,
-                    builder: (context, cue, _) => SubtitleOverlay(
-                      cue: cue,
-                      showSource: settings.showSource,
-                      fontSize: settings.subtitleFontSize,
-                      textColor: settings.subtitleTextColor,
-                      backgroundColor: bgColor,
-                    ),
+              ),
+              Positioned.fill(
+                child: ValueListenableBuilder(
+                  valueListenable: _player.activeCue,
+                  builder: (context, cue, _) => SubtitleOverlay(
+                    cue: cue,
+                    showSource: settings.showSource,
+                    fontSize: settings.subtitleFontSize,
+                    textColor: settings.subtitleTextColor,
+                    backgroundColor: bgColor,
                   ),
                 ),
-                // 영상 영역만 덮는 제스처 레이어(하단 컨트롤은 별도 위젯이라 영향 없음).
-                Positioned.fill(
-                  child: VideoGestureLayer(controller: controller),
+              ),
+              // 전체 영역을 덮는 제스처 레이어(하단 컨트롤은 별도 위젯이라 영향 없음).
+              Positioned.fill(
+                child: VideoGestureLayer(
+                  controller: controller,
+                  zoomEnabled: _isFullscreen,
+                  scale: _videoScale,
+                  offset: _videoOffset,
+                  onZoomChanged: (s, o) => setState(() {
+                    _videoScale = s;
+                    _videoOffset = o;
+                  }),
                 ),
-                // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
-                if (isWorking)
-                  const Positioned(
-                    top: 8,
-                    right: 8,
-                    child: _LiveBadge(),
-                  ),
-              ],
-            ),
+              ),
+              // 인식 중일 때만 우상단에 작은 표식(차단 오버레이 없음).
+              if (isWorking)
+                const Positioned(
+                  top: 8,
+                  right: 8,
+                  child: _LiveBadge(),
+                ),
+            ],
           ),
         ),
         // 하단 시스템 내비게이션 바와 겹치지 않도록 인셋을 확보한다.
@@ -239,6 +285,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             controller: controller,
             isFullscreen: _isFullscreen,
             onToggleFullscreen: _toggleFullscreen,
+            isFill: _fillMode,
+            onToggleFill: _toggleFill,
           ),
         ),
       ],

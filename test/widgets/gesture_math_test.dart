@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_subtitle_translator/widgets/gesture_math.dart';
 
@@ -80,6 +82,40 @@ void main() {
             const Duration(seconds: -10)),
         Duration.zero,
       );
+    });
+  });
+
+  group('clampScale', () {
+    test('범위 1.0~3.0으로 클램프', () {
+      expect(clampScale(0.5), 1.0);
+      expect(clampScale(2.0), 2.0);
+      expect(clampScale(5.0), 3.0);
+    });
+    test('NaN은 최소값', () {
+      expect(clampScale(double.nan), 1.0);
+    });
+    test('사용자 지정 범위', () {
+      expect(clampScale(10, max: 4.0), 4.0);
+    });
+  });
+
+  group('clampOffset', () {
+    const viewport = Size(400, 300);
+
+    test('scale<=1이면 이동 불가(0 고정)', () {
+      expect(clampOffset(const Offset(50, 50), 1.0, viewport), Offset.zero);
+      expect(clampOffset(const Offset(50, 50), 0.5, viewport), Offset.zero);
+    });
+
+    test('확대 시 ±(viewport*(scale-1)/2)로 클램프', () {
+      // scale 2.0 → maxX=400*1/2=200, maxY=300*1/2=150.
+      expect(clampOffset(const Offset(500, 500), 2.0, viewport),
+          const Offset(200, 150));
+      expect(clampOffset(const Offset(-500, -500), 2.0, viewport),
+          const Offset(-200, -150));
+      // 범위 안은 그대로.
+      expect(clampOffset(const Offset(100, 100), 2.0, viewport),
+          const Offset(100, 100));
     });
   });
 }

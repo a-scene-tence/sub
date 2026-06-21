@@ -9,13 +9,27 @@ import 'gesture_math.dart';
 
 /// 영상 영역 위에 깔리는 투명 제스처 레이어.
 ///
-/// 왼쪽 세로 드래그=화면 밝기, 오른쪽 세로 드래그=시스템 볼륨, 오른쪽 더블탭=+10초,
-/// 왼쪽 더블탭=−10초. 밝기/볼륨 조절 시 작은 HUD를 잠깐 표시한다. 하단 컨트롤바는 별도
-/// 위젯이라 이 레이어가 덮지 않는다(영상 영역만 덮음).
+/// 한 손가락 세로 드래그=화면 밝기(왼쪽)/시스템 볼륨(오른쪽), 더블탭=시크(오른쪽 +10초,
+/// 왼쪽 −10초). [zoomEnabled]이면 두 손가락 핀치=확대/축소, 두 손가락 이동=팬. 밝기/볼륨
+/// 조절 시 작은 HUD를 잠깐 표시한다. 하단 컨트롤바는 별도 위젯이라 이 레이어가 덮지 않는다.
+///
+/// 한 `GestureDetector`에서 세로 드래그와 스케일을 동시에 못 쓰므로, 밝기/볼륨도 `onScale*`에서
+/// `pointerCount`로 구분해 처리한다(1손가락=밝기/볼륨, 2손가락=줌/팬).
 class VideoGestureLayer extends StatefulWidget {
-  const VideoGestureLayer({super.key, required this.controller});
+  const VideoGestureLayer({
+    super.key,
+    required this.controller,
+    this.zoomEnabled = false,
+    this.scale = 1.0,
+    this.offset = Offset.zero,
+    this.onZoomChanged,
+  });
 
   final VideoPlayerController controller;
+  final bool zoomEnabled;
+  final double scale;
+  final Offset offset;
+  final void Function(double scale, Offset offset)? onZoomChanged;
 
   @override
   State<VideoGestureLayer> createState() => _VideoGestureLayerState();
@@ -36,6 +50,11 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
   GestureSide _lastTapSide = GestureSide.left; // onDoubleTapDown에서 기록.
   double _layerWidth = 0;
   double _layerHeight = 0;
+
+  // 스케일 제스처 시작 시점의 기준값(핀치 줌/팬 누적용).
+  double _baseScale = 1.0;
+  Offset _baseOffset = Offset.zero;
+  Offset _startFocal = Offset.zero;
 
   _HudKind? _hudKind;
   double _hudLevel = 0;
@@ -82,12 +101,26 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
     widget.controller.seekTo(seekTargetFor(v.position, v.duration, delta));
   }
 
-  void _onVerticalDragStart(DragStartDetails d) {
-    _dragSide = gestureSideFromDx(d.localPosition.dx, _layerWidth);
+  void _onScaleStart(ScaleStartDetails d) {
+    _dragSide = gestureSideFromDx(d.localFocalPoint.dx, _layerWidth);
+    _baseScale = widget.scale;
+    _baseOffset = widget.offset;
+    _startFocal = d.localFocalPoint;
   }
 
-  void _onVerticalDragUpdate(DragUpdateDetails d) {
-    final dy = d.primaryDelta ?? 0;
+  void _onScaleUpdate(ScaleUpdateDetails d) {
+    if (d.pointerCount >= 2) {
+      // 두 손가락: 핀치 줌 + 팬(전체화면에서만).
+      if (!widget.zoomEnabled) return;
+      final newScale = clampScale(_baseScale * d.scale);
+      final moved = _baseOffset + (d.localFocalPoint - _startFocal);
+      final newOffset =
+          clampOffset(moved, newScale, Size(_layerWidth, _layerHeight));
+      widget.onZoomChanged?.call(newScale, newOffset);
+      return;
+    }
+    // 한 손가락: 밝기(왼쪽)/볼륨(오른쪽).
+    final dy = d.focalPointDelta.dy;
     if (_dragSide == GestureSide.left) {
       _brightness = adjustLevel(_brightness, dy, _layerHeight);
       _brightnessCtl.setScreenBrightness(_brightness);
@@ -99,7 +132,7 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
     }
   }
 
-  void _onVerticalDragEnd(DragEndDetails d) => _dragSide = null;
+  void _onScaleEnd(ScaleEndDetails d) => _dragSide = null;
 
   @override
   void dispose() {
@@ -117,9 +150,9 @@ class _VideoGestureLayerState extends State<VideoGestureLayer> {
           behavior: HitTestBehavior.opaque,
           onDoubleTapDown: _onDoubleTapDown,
           onDoubleTap: _onDoubleTap,
-          onVerticalDragStart: _onVerticalDragStart,
-          onVerticalDragUpdate: _onVerticalDragUpdate,
-          onVerticalDragEnd: _onVerticalDragEnd,
+          onScaleStart: _onScaleStart,
+          onScaleUpdate: _onScaleUpdate,
+          onScaleEnd: _onScaleEnd,
           child: Stack(
             children: <Widget>[
               const Positioned.fill(child: SizedBox.expand()),
