@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """인프레임(In-Frame) 런처 아이콘 마스터 PNG 생성기.
 
-자막 프레임 글리프: 둥근 사각 프레임 외곽선 + 내부 하단 자막 줄 2개(아래가 더 짧음).
-색은 파스텔 인디고, 바탕은 흰색 둥근 사각(플랫폼이 모서리 마스킹).
+글리프(파스텔 회색, 단색): 둥근 사각 **프레임**(화면) 안에 **재생 ▶ 삼각형**(영상 재생)과
+하단 **자막 줄 2개**(아래가 더 짧음)를 함께 담아 '영상 재생 + 자막'을 표현한다.
+바탕은 흰색 둥근 사각(플랫폼이 모서리 마스킹) — 첨부 형제 앱 패밀리 톤.
 
 생성물:
   assets/icon/in_frame.png     1024 불투명 흰 바탕 + 글리프(캔버스 ~58%)  → iOS·Android 레거시
@@ -17,7 +18,7 @@ import struct
 import zlib
 
 SIZE = 1024
-INDIGO = (124, 133, 240)  # #7C85F0 파스텔 인디고
+GLYPH = (150, 157, 168)  # #969DA8 파스텔 회색
 WHITE = (255, 255, 255)
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "icon")
@@ -29,18 +30,29 @@ def _geometry(size, glyph_frac):
     cx = cy = size / 2.0
     box_top = cy - g / 2.0
     box_left = cx - g / 2.0
+    # 재생 삼각형(오른쪽 방향), 상단-중앙. 무게중심이 대략 가로 중앙에 오도록.
+    tcy = box_top + g * 0.40
+    th = g * 0.155  # 반높이
+    tlx = cx - g * 0.12
+    trx = cx + g * 0.17
+    tri = [(tlx, tcy - th), (tlx, tcy + th), (trx, tcy)]
     return {
         "g": g,
-        "cx": cx,
-        "cy": cy,
-        "hx": g / 2.0,
-        "hy": g / 2.0,
-        "radius": g * 0.18,
-        "stroke": g * 0.088,
-        "bar_h": g * 0.088,
-        # 자막 줄 2개(박스 상단 기준 세로 위치, 좌측 정렬 폭).
-        "top_bar": (box_left + g * 0.20, box_top + g * 0.60, g * 0.58),
-        "bot_bar": (box_left + g * 0.20, box_top + g * 0.77, g * 0.40),
+        "frame": {
+            "cx": cx,
+            "cy": cy,
+            "hx": g / 2.0,
+            "hy": g / 2.0,
+            "radius": g * 0.18,
+            "stroke": g * 0.075,
+        },
+        "tri": tri,
+        "bar_h": g * 0.075,
+        # 자막 줄 2개(좌측 정렬, 박스 상단 기준 세로 위치, 폭).
+        "bars": [
+            (box_left + g * 0.22, box_top + g * 0.72, g * 0.56),
+            (box_left + g * 0.22, box_top + g * 0.85, g * 0.38),
+        ],
     }
 
 
@@ -51,28 +63,23 @@ def _render_pillow(size, glyph_frac, transparent_bg):
     ss = 4
     s = size * ss
     geo = _geometry(s, glyph_frac)
-    if transparent_bg:
-        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    else:
-        img = Image.new("RGBA", (s, s), WHITE + (255,))
+    img = Image.new(
+        "RGBA", (s, s), (0, 0, 0, 0) if transparent_bg else WHITE + (255,)
+    )
     d = ImageDraw.Draw(img)
 
-    cx, cy, hx, hy = geo["cx"], geo["cy"], geo["hx"], geo["hy"]
-    r, w = geo["radius"], geo["stroke"]
-    # 프레임 외곽선.
+    f = geo["frame"]
     d.rounded_rectangle(
-        [cx - hx, cy - hy, cx + hx, cy + hy],
-        radius=r,
-        outline=INDIGO + (255,),
-        width=int(round(w)),
+        [f["cx"] - f["hx"], f["cy"] - f["hy"], f["cx"] + f["hx"], f["cy"] + f["hy"]],
+        radius=f["radius"],
+        outline=GLYPH + (255,),
+        width=int(round(f["stroke"])),
     )
-    # 자막 줄.
-    for bx, by, bw in (geo["top_bar"], geo["bot_bar"]):
+    d.polygon(geo["tri"], fill=GLYPH + (255,))
+    for bx, by, bw in geo["bars"]:
         bh = geo["bar_h"]
         d.rounded_rectangle(
-            [bx, by - bh / 2, bx + bw, by + bh / 2],
-            radius=bh / 2,
-            fill=INDIGO + (255,),
+            [bx, by - bh / 2, bx + bw, by + bh / 2], radius=bh / 2, fill=GLYPH + (255,)
         )
     return img.resize((size, size), Image.LANCZOS)
 
@@ -85,21 +92,26 @@ def _save_pillow(path, img):
 def _rrect_sdf(px, py, cx, cy, hx, hy, r):
     qx = abs(px - cx) - (hx - r)
     qy = abs(py - cy) - (hy - r)
-    ox = max(qx, 0.0)
-    oy = max(qy, 0.0)
-    return math.hypot(ox, oy) + min(max(qx, qy), 0.0) - r
+    return math.hypot(max(qx, 0.0), max(qy, 0.0)) + min(max(qx, qy), 0.0) - r
+
+
+def _in_tri(px, py, a, b, c):
+    d1 = (px - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (py - b[1])
+    d2 = (px - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (py - c[1])
+    d3 = (px - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (py - a[1])
+    neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+    pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+    return not (neg and pos)
 
 
 def _render_stdlib(size, glyph_frac, transparent_bg):
     geo = _geometry(size, glyph_frac)
-    cx, cy, hx, hy = geo["cx"], geo["cy"], geo["hx"], geo["hy"]
-    r, w = geo["radius"], geo["stroke"]
-    bars = []
-    for bx, by, bw in (geo["top_bar"], geo["bot_bar"]):
-        bh = geo["bar_h"]
-        bars.append((bx + bw / 2, by, bw / 2, bh / 2, bh / 2))  # center-based rrect
+    f = geo["frame"]
+    tri = geo["tri"]
+    bars = [(bx + bw / 2, by, bw / 2, geo["bar_h"] / 2, geo["bar_h"] / 2)
+            for bx, by, bw in geo["bars"]]
 
-    ss = 3  # 슈퍼샘플(3x3=9 서브픽셀).
+    ss = 3
     inv = 1.0 / ss
     buf = bytearray(size * size * 4)
     for y in range(size):
@@ -110,11 +122,12 @@ def _render_stdlib(size, glyph_frac, transparent_bg):
                 py = y + (sy + 0.5) * inv
                 for sx in range(ss):
                     px = x + (sx + 0.5) * inv
-                    inside = False
-                    # 프레임 외곽선: |sdf| <= stroke/2.
-                    if abs(_rrect_sdf(px, py, cx, cy, hx, hy, r)) <= w / 2:
+                    inside = abs(
+                        _rrect_sdf(px, py, f["cx"], f["cy"], f["hx"], f["hy"], f["radius"])
+                    ) <= f["stroke"] / 2
+                    if not inside and _in_tri(px, py, tri[0], tri[1], tri[2]):
                         inside = True
-                    else:
+                    if not inside:
                         for (bcx, bcy, bhx, bhy, br) in bars:
                             if _rrect_sdf(px, py, bcx, bcy, bhx, bhy, br) <= 0:
                                 inside = True
@@ -124,14 +137,12 @@ def _render_stdlib(size, glyph_frac, transparent_bg):
             cov = hits / (ss * ss)
             o = row + x * 4
             if transparent_bg:
-                buf[o] = INDIGO[0]
-                buf[o + 1] = INDIGO[1]
-                buf[o + 2] = INDIGO[2]
+                buf[o], buf[o + 1], buf[o + 2] = GLYPH
                 buf[o + 3] = int(round(cov * 255))
             else:
-                buf[o] = int(round(INDIGO[0] * cov + WHITE[0] * (1 - cov)))
-                buf[o + 1] = int(round(INDIGO[1] * cov + WHITE[1] * (1 - cov)))
-                buf[o + 2] = int(round(INDIGO[2] * cov + WHITE[2] * (1 - cov)))
+                buf[o] = int(round(GLYPH[0] * cov + WHITE[0] * (1 - cov)))
+                buf[o + 1] = int(round(GLYPH[1] * cov + WHITE[1] * (1 - cov)))
+                buf[o + 2] = int(round(GLYPH[2] * cov + WHITE[2] * (1 - cov)))
                 buf[o + 3] = 255
     return buf
 
@@ -150,11 +161,11 @@ def _write_png(path, w, h, rgba):
     for y in range(h):
         raw.append(0)
         raw += rgba[y * stride : (y + 1) * stride]
-    with open(path, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n")
-        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)))
-        f.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
-        f.write(chunk(b"IEND", b""))
+    with open(path, "wb") as fp:
+        fp.write(b"\x89PNG\r\n\x1a\n")
+        fp.write(chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)))
+        fp.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
+        fp.write(chunk(b"IEND", b""))
 
 
 # ===================== 엔트리 =====================
