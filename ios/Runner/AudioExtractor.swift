@@ -13,12 +13,14 @@ enum AudioExtractor {
   /// [startMs]/[endMs]가 주어지면 그 시간 구간만 추출한다(실시간 자막용). 둘 다 nil이면 전체.
   static func extractWavAsync(
     videoPath: String, outPath: String,
-    startMs: Int?, endMs: Int?, result: @escaping FlutterResult
+    startMs: Int?, endMs: Int?, headers: [String: String]?,
+    result: @escaping FlutterResult
   ) {
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let info = try extract(
-          videoPath: videoPath, outPath: outPath, startMs: startMs, endMs: endMs
+          videoPath: videoPath, outPath: outPath,
+          startMs: startMs, endMs: endMs, headers: headers
         )
         DispatchQueue.main.async { result(info) }
       } catch {
@@ -39,17 +41,26 @@ enum AudioExtractor {
   }
 
   private static func extract(
-    videoPath: String, outPath: String, startMs: Int?, endMs: Int?
+    videoPath: String, outPath: String, startMs: Int?, endMs: Int?,
+    headers: [String: String]?
   ) throws -> [String: Any] {
     let url: URL
+    let isRemote: Bool
     if let parsed = URL(string: videoPath), let scheme = parsed.scheme,
        scheme == "http" || scheme == "https" {
       url = parsed
+      isRemote = true
     } else {
       url = URL(fileURLWithPath: videoPath)
+      isRemote = false
     }
 
-    let asset = AVURLAsset(url: url)
+    // 원격 URL이면 헤더(UA·Referer)와 함께 연다(핫링크 보호 우회).
+    var options: [String: Any] = [:]
+    if isRemote, let headers = headers, !headers.isEmpty {
+      options["AVURLAssetHTTPHeaderFieldsKey"] = headers
+    }
+    let asset = AVURLAsset(url: url, options: options)
     guard let track = asset.tracks(withMediaType: .audio).first else {
       throw ExtractError(message: "오디오 트랙 없음")
     }

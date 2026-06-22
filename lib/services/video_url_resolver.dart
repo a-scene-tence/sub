@@ -75,6 +75,16 @@ class VideoUrlResolver {
   }
 }
 
+/// 미디어 요청에 붙일 HTTP 헤더. User-Agent는 항상, Referer는 영상이 어떤 페이지에서
+/// 발견된 경우에만 추가한다(핫링크 보호 우회). 직접 미디어 URL 입력은 [pageUrl]을 주지 않는다.
+Map<String, String> streamHeaders({required String mediaUrl, String? pageUrl}) {
+  final h = <String, String>{'User-Agent': AppConfig.webFetchUserAgent};
+  if (pageUrl != null && pageUrl.isNotEmpty && pageUrl != mediaUrl) {
+    h['Referer'] = pageUrl;
+  }
+  return h;
+}
+
 bool _isHttp(Uri uri) => uri.scheme == 'http' || uri.scheme == 'https';
 
 bool _isMediaContentType(String contentType) =>

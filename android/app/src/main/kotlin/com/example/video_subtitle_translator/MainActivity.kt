@@ -29,8 +29,10 @@ class MainActivity : FlutterActivity() {
                         // startMs/endMs가 있으면 해당 구간만 추출(실시간 자막용), 없으면 전체.
                         val startMs = call.argument<Int>("startMs")
                         val endMs = call.argument<Int>("endMs")
+                        // 네트워크 URL일 때 보낼 HTTP 헤더(UA·Referer 등, 핫링크 보호 우회).
+                        val headers = call.argument<Map<String, String>>("headers")
                         AudioExtractor.extractWavAsync(
-                            videoPath, outPath, startMs, endMs, result
+                            videoPath, outPath, startMs, endMs, headers, result
                         )
                     }
                     else -> result.notImplemented()

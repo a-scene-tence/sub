@@ -14,8 +14,10 @@ class AudioExtractionException implements Exception {
 /// 오디오 추출 추상 인터페이스(파이프라인 테스트 시 목으로 대체).
 abstract class AudioExtractor {
   /// [videoPath]에서 WAV를 추출한다. [start]/[end]를 주면 그 시간 구간만 추출하고
-  /// (실시간 자막용), 둘 다 null이면 전체를 추출한다.
-  Future<File> extractWav(String videoPath, {Duration? start, Duration? end});
+  /// (실시간 자막용), 둘 다 null이면 전체를 추출한다. [headers]는 네트워크 URL일 때
+  /// 함께 보낼 HTTP 헤더(UA·Referer 등, 핫링크 보호 우회).
+  Future<File> extractWav(String videoPath,
+      {Duration? start, Duration? end, Map<String, String>? headers});
   Future<void> cleanup(File file);
 }
 
@@ -37,7 +39,7 @@ class AudioExtractionService implements AudioExtractor {
   /// 호출자는 사용 후 [cleanup]으로 정리한다.
   @override
   Future<File> extractWav(String videoPath,
-      {Duration? start, Duration? end}) async {
+      {Duration? start, Duration? end, Map<String, String>? headers}) async {
     final tmpDir = await getTemporaryDirectory();
     final outPath = p.join(
       tmpDir.path,
@@ -52,6 +54,7 @@ class AudioExtractionService implements AudioExtractor {
       };
       if (start != null) args['startMs'] = start.inMilliseconds;
       if (end != null) args['endMs'] = end.inMilliseconds;
+      if (headers != null && headers.isNotEmpty) args['headers'] = headers;
       await _channel.invokeMethod<Map<dynamic, dynamic>>('extractWav', args);
     } on PlatformException catch (e) {
       throw AudioExtractionException('오디오 추출 실패: ${e.message ?? e.code}');

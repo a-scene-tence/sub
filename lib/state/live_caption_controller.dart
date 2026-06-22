@@ -45,12 +45,14 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
     required String videoPath,
     required this.targetLanguage,
     this.languageHint,
+    Map<String, String> httpHeaders = const <String, String>{},
     Duration? window,
     Duration? lookahead,
     Duration tick = const Duration(milliseconds: 500),
   })  : _extractor = extractor,
         _caption = caption,
         _videoPath = videoPath,
+        _httpHeaders = httpHeaders,
         _window = window ?? AppConfig.liveWindow,
         _lookahead = lookahead ?? AppConfig.liveLookahead,
         _tick = tick,
@@ -59,6 +61,7 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
   final AudioExtractor _extractor;
   final CaptionSource _caption;
   final String _videoPath;
+  final Map<String, String> _httpHeaders;
   final String targetLanguage;
   final String? languageHint;
   final Duration _window;
@@ -138,7 +141,8 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
   Future<void> _step(Duration start, Duration end) async {
     File? wav;
     try {
-      wav = await _extractor.extractWav(_videoPath, start: start, end: end);
+      wav = await _extractor.extractWav(_videoPath,
+          start: start, end: end, headers: _httpHeaders);
       final bytes = await wav.readAsBytes(); // 윈도우(≤15초)는 작아 전체 읽기 안전.
       final cues = await _caption.caption(
         bytes,

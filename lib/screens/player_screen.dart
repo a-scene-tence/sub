@@ -20,18 +20,31 @@ import 'settings_screen.dart';
 
 /// 영상 소스: 로컬 파일 또는 네트워크 URL.
 class VideoSource {
-  const VideoSource._(this.path, this.isNetwork);
-  factory VideoSource.file(String path) => VideoSource._(path, false);
-  factory VideoSource.network(String url) => VideoSource._(url, true);
+  const VideoSource._(this.path, this.isNetwork, this.httpHeaders);
+  factory VideoSource.file(String path) =>
+      VideoSource._(path, false, const <String, String>{});
+  factory VideoSource.network(String url,
+          {Map<String, String> headers = const <String, String>{}}) =>
+      VideoSource._(url, true, headers);
 
   final String path;
   final bool isNetwork;
+
+  /// 네트워크 재생·오디오 추출에 함께 보낼 HTTP 헤더(UA·Referer 등). 파일이면 빈 맵.
+  final Map<String, String> httpHeaders;
 }
 
 class PlayerScreen extends ConsumerStatefulWidget {
-  const PlayerScreen({super.key, required this.source});
+  const PlayerScreen({
+    super.key,
+    required this.source,
+    this.fallbacks = const <VideoSource>[],
+  });
 
   final VideoSource source;
+
+  /// [source] 재생이 실패하면 순서대로 시도할 대체 소스(웹페이지에서 찾은 다른 후보들).
+  final List<VideoSource> fallbacks;
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
@@ -71,28 +84,48 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 비디오 초기화.
-    final controller = widget.source.isNetwork
-        ? VideoPlayerController.networkUrl(Uri.parse(widget.source.path))
-        : VideoPlayerController.file(File(widget.source.path));
-    _videoController = controller;
-    try {
-      await controller.initialize();
-    } catch (e) {
-      if (!mounted) return;
+    // 비디오 초기화: 후보(source + fallbacks)를 순서대로 시도해 처음 성공한 것을 쓴다.
+    final sources = <VideoSource>[widget.source, ...widget.fallbacks];
+    VideoPlayerController? controller;
+    VideoSource? activeSource;
+    Object? lastError;
+    for (final src in sources) {
+      final c = src.isNetwork
+          ? VideoPlayerController.networkUrl(
+              Uri.parse(src.path),
+              httpHeaders: src.httpHeaders,
+            )
+          : VideoPlayerController.file(File(src.path));
+      try {
+        await c.initialize();
+        controller = c;
+        activeSource = src;
+        break;
+      } catch (e) {
+        lastError = e;
+        await c.dispose();
+      }
+    }
+    if (!mounted) {
+      await controller?.dispose();
+      return;
+    }
+    if (controller == null || activeSource == null) {
       setState(() {
         _initFailed = true;
-        _initError = '영상을 열 수 없습니다: $e';
+        _initError = '영상을 재생할 수 없어요. 보호된 스트림이거나 지원하지 않는 형식일 수 '
+            '있어요. 직접 영상 파일(.mp4) URL을 시도해 보세요.\n($lastError)';
       });
       return;
     }
-    if (!mounted) return;
+    _videoController = controller;
 
     // 실시간 자막 컨트롤러 연결 후 즉시 재생. 자막은 재생을 따라 점진적으로 채워진다.
     final settings = ref.read(settingsProvider).value;
     final live = ref.read(liveCaptionControllerFactory)((
       apiKey: apiKey,
-      videoPath: widget.source.path,
+      videoPath: activeSource.path,
+      httpHeaders: activeSource.httpHeaders,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
     ));

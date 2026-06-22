@@ -90,11 +90,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _resolving = false);
 
     if (candidates.length == 1) {
-      _playCandidate(candidates.first);
+      _playFrom(candidates, pageUrl: url);
       return;
     }
     final chosen = await _pickCandidate(candidates);
-    if (chosen != null) _playCandidate(chosen);
+    if (chosen == null) return;
+    // 고른 후보를 맨 앞에, 나머지는 폴백 순서로.
+    final ordered = <VideoCandidate>[
+      chosen,
+      ...candidates.where((c) => c != chosen),
+    ];
+    _playFrom(ordered, pageUrl: url);
   }
 
   /// 여러 후보 중 하나를 고르는 모달 바텀시트.
@@ -147,21 +153,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _playCandidate(VideoCandidate c) {
-    if (!c.subtitleReliable) {
+  /// [ordered]의 첫 후보를 재생하고 나머지는 폴백으로 넘긴다. 각 후보에 UA·Referer 헤더를
+  /// 붙여 핫링크 보호 URL의 재생/추출 실패를 줄인다.
+  void _playFrom(List<VideoCandidate> ordered, {required String pageUrl}) {
+    if (ordered.isEmpty) return;
+    if (!ordered.first.subtitleReliable) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('스트림(HLS/DASH) 영상이라 자막 생성이 제한될 수 있어요.'),
         ),
       );
     }
-    _open(VideoSource.network(c.url));
+    VideoSource toSource(VideoCandidate c) => VideoSource.network(
+          c.url,
+          headers: streamHeaders(mediaUrl: c.url, pageUrl: pageUrl),
+        );
+    _open(
+      toSource(ordered.first),
+      fallbacks: ordered.skip(1).map(toSource).toList(),
+    );
   }
 
-  void _open(VideoSource source) {
+  void _open(VideoSource source,
+      {List<VideoSource> fallbacks = const <VideoSource>[]}) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(source: source),
+        builder: (_) => PlayerScreen(source: source, fallbacks: fallbacks),
       ),
     );
   }

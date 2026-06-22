@@ -28,6 +28,7 @@ final geminiApiKeyProvider = FutureProvider<String?>((ref) {
 typedef LiveArgs = ({
   String apiKey, // Gemini(AI Studio) 키.
   String videoPath,
+  Map<String, String> httpHeaders, // 네트워크 추출 시 보낼 헤더(UA·Referer).
   String targetLanguage,
   String? languageHint,
 });
@@ -43,6 +44,7 @@ final liveCaptionControllerFactory =
       extractor: AudioExtractionService(),
       caption: GeminiCaptionService(apiKey: a.apiKey),
       videoPath: a.videoPath,
+      httpHeaders: a.httpHeaders,
       targetLanguage: a.targetLanguage,
       languageHint: a.languageHint,
     );

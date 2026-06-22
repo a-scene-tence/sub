@@ -32,11 +32,12 @@ object AudioExtractor {
         outPath: String,
         startMs: Int?,
         endMs: Int?,
+        headers: Map<String, String>?,
         result: MethodChannel.Result
     ) {
         Thread {
             try {
-                val info = extract(videoPath, outPath, startMs, endMs)
+                val info = extract(videoPath, outPath, startMs, endMs, headers)
                 mainHandler.post { result.success(info) }
             } catch (e: Throwable) {
                 mainHandler.post {
@@ -50,7 +51,8 @@ object AudioExtractor {
         videoPath: String,
         outPath: String,
         startMs: Int?,
-        endMs: Int?
+        endMs: Int?,
+        headers: Map<String, String>?
     ): Map<String, Any> {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
@@ -59,7 +61,12 @@ object AudioExtractor {
             raf.setLength(0)
             raf.write(ByteArray(44)) // WAV 헤더 자리(나중에 패치)
 
-            extractor.setDataSource(videoPath)
+            // 네트워크 URL이면 헤더(UA·Referer)와 함께 데이터 소스를 연다(핫링크 보호 우회).
+            if (!headers.isNullOrEmpty()) {
+                extractor.setDataSource(videoPath, headers)
+            } else {
+                extractor.setDataSource(videoPath)
+            }
 
             var trackIndex = -1
             var inputFormat: MediaFormat? = null

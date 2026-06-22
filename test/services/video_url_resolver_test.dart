@@ -84,6 +84,24 @@ void main() {
     });
   });
 
+  group('streamHeaders', () {
+    test('User-Agent는 항상 포함', () {
+      final h = streamHeaders(mediaUrl: 'https://cdn/x.mp4');
+      expect(h['User-Agent'], isNotNull);
+      expect(h.containsKey('Referer'), isFalse);
+    });
+    test('pageUrl이 다르면 Referer 포함', () {
+      final h = streamHeaders(
+          mediaUrl: 'https://cdn/x.mp4', pageUrl: 'https://site/watch');
+      expect(h['Referer'], 'https://site/watch');
+    });
+    test('pageUrl == mediaUrl이면 Referer 없음', () {
+      final h = streamHeaders(
+          mediaUrl: 'https://cdn/x.mp4', pageUrl: 'https://cdn/x.mp4');
+      expect(h.containsKey('Referer'), isFalse);
+    });
+  });
+
   group('VideoUrlResolver.resolve', () {
     test('직접 mp4 URL은 네트워크 호출 없이 1개 후보', () async {
       var called = false;
