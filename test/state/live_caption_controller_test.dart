@@ -22,7 +22,7 @@ class _RecordingExtractor implements AudioExtractor {
 
   @override
   Future<File> extractWav(String videoPath,
-      {Duration? start, Duration? end, Map<String, String>? headers}) async {
+      {Duration? start, Duration? end}) async {
     requests.add((start: start, end: end));
     final f = File('${_dir.path}/w${requests.length}.wav');
     await f.writeAsBytes(List<int>.filled(64, 0));

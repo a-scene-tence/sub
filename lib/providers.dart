@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'config/secrets.dart';
 import 'services/audio_extraction_service.dart';
 import 'services/gemini_caption_service.dart';
-import 'services/video_url_resolver.dart';
 import 'state/live_caption_controller.dart';
 import 'state/settings_controller.dart';
 
@@ -13,10 +12,6 @@ final secretsProvider = Provider<Secrets>((ref) => Secrets());
 /// 사용자 설정.
 final settingsProvider =
     ChangeNotifierProvider<SettingsController>((ref) => SettingsController());
-
-/// 웹페이지 URL에서 재생 가능한 영상 파일을 찾아내는 해석기.
-final videoUrlResolverProvider =
-    Provider<VideoUrlResolver>((ref) => VideoUrlResolver());
 
 /// 현재 저장된 Gemini API 키(없으면 null) — 설정 화면 표시/검증용.
 /// 이 앱은 음성 인식·번역을 모두 Gemini로 처리하므로 이 키 하나만 필요하다.
@@ -28,7 +23,6 @@ final geminiApiKeyProvider = FutureProvider<String?>((ref) {
 typedef LiveArgs = ({
   String apiKey, // Gemini(AI Studio) 키.
   String videoPath,
-  Map<String, String> httpHeaders, // 네트워크 추출 시 보낼 헤더(UA·Referer).
   String targetLanguage,
   String? languageHint,
 });
@@ -44,7 +38,6 @@ final liveCaptionControllerFactory =
       extractor: AudioExtractionService(),
       caption: GeminiCaptionService(apiKey: a.apiKey),
       videoPath: a.videoPath,
-      httpHeaders: a.httpHeaders,
       targetLanguage: a.targetLanguage,
       languageHint: a.languageHint,
     );

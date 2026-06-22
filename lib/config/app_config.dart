@@ -44,23 +44,4 @@ class AppConfig {
 
   /// 기본 번역 대상 언어(ISO-639-1).
   static const String defaultTargetLanguage = 'ko';
-
-  // --- 웹페이지 URL에서 영상 파일 감지(VideoUrlResolver) ---
-  /// 페이지를 가져올 때 보낼 브라우저 유사 User-Agent(일부 사이트의 기본 차단 회피).
-  static const String webFetchUserAgent =
-      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
-
-  /// 페이지 HTML 다운로드 타임아웃.
-  static const Duration webFetchTimeout = Duration(seconds: 15);
-
-  /// 다운로드할 HTML 최대 바이트(거대한 응답 보호).
-  static const int webFetchMaxBytes = 5 * 1024 * 1024;
-
-  /// 직접 미디어 링크로 인정할 확장자(소문자, 점 제외).
-  static const Set<String> mediaFileExtensions = <String>{
-    'mp4', 'm4v', 'mov', 'webm', 'mkv', 'ogv', 'avi', // progressive
-    'm3u8', // HLS
-    'mpd', // DASH
-  };
 }

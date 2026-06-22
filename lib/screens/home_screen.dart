@@ -2,14 +2,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../models/video_candidate.dart';
-import '../providers.dart';
 import '../services/diagnostics.dart';
-import '../services/video_url_resolver.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
 
-/// 시작 화면: 로컬 영상 파일 선택 또는 URL 입력.
+/// 시작 화면: 로컬 영상 파일을 선택한다.
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -18,9 +15,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  final TextEditingController _urlController = TextEditingController();
-  bool _resolving = false;
-
   @override
   void initState() {
     super.initState();
@@ -50,12 +44,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _urlController.dispose();
-    super.dispose();
-  }
-
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.video);
     final path = result?.files.single.path;
@@ -64,122 +52,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// URL 입력 흐름: 직접 미디어 URL이면 바로, 일반 웹페이지면 영상 파일을 감지해 재생한다.
-  /// 후보가 여러 개면 선택 시트를 띄운다.
-  Future<void> _openUrl() async {
-    final url = _urlController.text.trim();
-    if (url.isEmpty || _resolving) return;
-
-    setState(() => _resolving = true);
-    final messenger = ScaffoldMessenger.of(context);
-    List<VideoCandidate> candidates;
-    try {
-      candidates = await ref.read(videoUrlResolverProvider).resolve(url);
-    } on ResolveException catch (e) {
-      if (!mounted) return;
-      setState(() => _resolving = false);
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
-      return;
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _resolving = false);
-      messenger.showSnackBar(SnackBar(content: Text('영상을 찾지 못했습니다: $e')));
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _resolving = false);
-
-    if (candidates.length == 1) {
-      _playFrom(candidates, pageUrl: url);
-      return;
-    }
-    final chosen = await _pickCandidate(candidates);
-    if (chosen == null) return;
-    // 고른 후보를 맨 앞에, 나머지는 폴백 순서로.
-    final ordered = <VideoCandidate>[
-      chosen,
-      ...candidates.where((c) => c != chosen),
-    ];
-    _playFrom(ordered, pageUrl: url);
-  }
-
-  /// 여러 후보 중 하나를 고르는 모달 바텀시트.
-  Future<VideoCandidate?> _pickCandidate(List<VideoCandidate> candidates) {
-    return showModalBottomSheet<VideoCandidate>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-                child: Text('재생할 영상 선택',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: candidates.length,
-                  itemBuilder: (context, i) {
-                    final c = candidates[i];
-                    return ListTile(
-                      leading: const Icon(Icons.movie_outlined),
-                      title: Text(
-                        c.title?.isNotEmpty == true ? c.title! : c.url,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        c.subtitleReliable
-                            ? c.url
-                            : '${c.url}\n스트림 영상 — 자막이 제한될 수 있어요',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      isThreeLine: !c.subtitleReliable,
-                      onTap: () => Navigator.of(context).pop(c),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// [ordered]의 첫 후보를 재생하고 나머지는 폴백으로 넘긴다. 각 후보에 UA·Referer 헤더를
-  /// 붙여 핫링크 보호 URL의 재생/추출 실패를 줄인다.
-  void _playFrom(List<VideoCandidate> ordered, {required String pageUrl}) {
-    if (ordered.isEmpty) return;
-    if (!ordered.first.subtitleReliable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('스트림(HLS/DASH) 영상이라 자막 생성이 제한될 수 있어요.'),
-        ),
-      );
-    }
-    VideoSource toSource(VideoCandidate c) => VideoSource.network(
-          c.url,
-          headers: streamHeaders(mediaUrl: c.url, pageUrl: pageUrl),
-        );
-    _open(
-      toSource(ordered.first),
-      fallbacks: ordered.skip(1).map(toSource).toList(),
-    );
-  }
-
-  void _open(VideoSource source,
-      {List<VideoSource> fallbacks = const <VideoSource>[]}) {
+  void _open(VideoSource source) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(source: source, fallbacks: fallbacks),
-      ),
+      MaterialPageRoute<void>(builder: (_) => PlayerScreen(source: source)),
     );
   }
 
@@ -218,38 +93,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: const Icon(Icons.video_library),
               label: const Text('영상 파일 선택'),
               onPressed: _pickFile,
-            ),
-            const SizedBox(height: 32),
-            const Divider(),
-            const SizedBox(height: 16),
-            const Text('또는 영상 URL 입력'),
-            const SizedBox(height: 4),
-            const Text(
-              '영상 파일 URL은 물론, 영상이 있는 웹페이지 주소를 넣으면 영상을 찾아 재생합니다.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _urlController,
-              keyboardType: TextInputType.url,
-              enabled: !_resolving,
-              decoration: const InputDecoration(
-                hintText: 'https://example.com/page 또는 video.mp4',
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _openUrl(),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              icon: _resolving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.play_circle_outline),
-              label: Text(_resolving ? '영상 찾는 중…' : 'URL 재생'),
-              onPressed: _resolving ? null : _openUrl,
             ),
           ],
         ),

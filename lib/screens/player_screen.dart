@@ -4,14 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/subtitle_cue.dart';
 import '../providers.dart';
 import '../services/cache_cleaner.dart';
-import '../services/video_url_resolver.dart';
 import '../state/live_caption_controller.dart';
 import '../state/player_controller.dart';
 import '../state/settings_controller.dart';
@@ -20,33 +18,17 @@ import '../widgets/subtitle_overlay.dart';
 import '../widgets/video_gesture_layer.dart';
 import 'settings_screen.dart';
 
-/// 영상 소스: 로컬 파일 또는 네트워크 URL.
+/// 영상 소스: 로컬 영상 파일.
 class VideoSource {
-  const VideoSource._(this.path, this.isNetwork, this.httpHeaders);
-  factory VideoSource.file(String path) =>
-      VideoSource._(path, false, const <String, String>{});
-  factory VideoSource.network(String url,
-          {Map<String, String> headers = const <String, String>{}}) =>
-      VideoSource._(url, true, headers);
+  const VideoSource.file(this.path);
 
   final String path;
-  final bool isNetwork;
-
-  /// 네트워크 재생·오디오 추출에 함께 보낼 HTTP 헤더(UA·Referer 등). 파일이면 빈 맵.
-  final Map<String, String> httpHeaders;
 }
 
 class PlayerScreen extends ConsumerStatefulWidget {
-  const PlayerScreen({
-    super.key,
-    required this.source,
-    this.fallbacks = const <VideoSource>[],
-  });
+  const PlayerScreen({super.key, required this.source});
 
   final VideoSource source;
-
-  /// [source] 재생이 실패하면 순서대로 시도할 대체 소스(웹페이지에서 찾은 다른 후보들).
-  final List<VideoSource> fallbacks;
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
@@ -54,8 +36,6 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final PlayerController _player = PlayerController();
-  // 재생 전 미디어 URL 프리플라이트(403 조기 감지·리다이렉트 최종 URL)용 클라이언트.
-  final http.Client _probeClient = http.Client();
   LiveCaptionController? _live;
   VideoPlayerController? _videoController;
   bool _initFailed = false;
@@ -88,90 +68,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       return;
     }
 
-    // 비디오 초기화: 후보(source + fallbacks)를 순서대로 시도해 처음 성공한 것을 쓴다.
-    // 네트워크 후보는 헤더(UA·Referer·Origin)를 붙인 시도를 먼저, 실패하면 헤더 없이도
-    // 시도한다. 일부 서버는 헤더가 있어야(핫링크 보호) 통과하고, 일부는 헤더가 붙으면
-    // 오히려 거부하므로 양쪽을 모두 시도해 성공률을 높인다.
-    final attempts = <({VideoSource src, Map<String, String> headers})>[];
-    for (final src in <VideoSource>[widget.source, ...widget.fallbacks]) {
-      if (src.isNetwork) {
-        attempts.add((src: src, headers: src.httpHeaders));
-        if (src.httpHeaders.isNotEmpty) {
-          attempts.add((src: src, headers: const <String, String>{}));
-        }
-      } else {
-        attempts.add((src: src, headers: const <String, String>{}));
-      }
-    }
-
-    VideoPlayerController? controller;
-    VideoSource? activeSource;
-    Map<String, String> activeHeaders = const <String, String>{};
-    Object? lastError;
-    int? lastStatus; // 프리플라이트로 얻은 마지막 HTTP 상태(메시지에 우선 반영).
-    for (final a in attempts) {
-      // 네트워크 후보는 재생 전 가볍게 프리플라이트해 403을 조기에 건너뛰고, 리다이렉트
-      // 최종 URL로 재생한다(베스트에포트: 프리플라이트 실패 시 원래 URL로 그대로 진행).
-      var playUrl = a.src.path;
-      if (a.src.isNetwork) {
-        try {
-          final probe = await probeMediaUrl(
-            a.src.path,
-            headers: a.headers,
-            client: _probeClient,
-            timeout: const Duration(seconds: 6),
-          );
-          if (probe.forbidden) {
-            lastStatus = probe.statusCode;
-            lastError = 'HTTP ${probe.statusCode}';
-            continue; // initialize를 기다리지 않고 다음 시도로.
-          }
-          if (probe.ok) {
-            lastStatus = probe.statusCode;
-            playUrl = probe.finalUrl; // 리다이렉트 최종 URL로 재생(헤더 유실 방지).
-          }
-        } catch (_) {
-          // 프리플라이트 실패는 무시하고 원래 URL로 초기화 시도.
-        }
-      }
-      final c = a.src.isNetwork
-          ? VideoPlayerController.networkUrl(
-              Uri.parse(playUrl),
-              httpHeaders: a.headers,
-            )
-          : VideoPlayerController.file(File(a.src.path));
-      try {
-        await c.initialize();
-        controller = c;
-        activeSource = a.src;
-        activeHeaders = a.headers;
-        break;
-      } catch (e) {
-        lastError = e;
-        await c.dispose();
-      }
-    }
-    if (!mounted) {
-      await controller?.dispose();
-      return;
-    }
-    if (controller == null || activeSource == null) {
+    // 로컬 영상 파일을 초기화한다.
+    final controller = VideoPlayerController.file(File(widget.source.path));
+    try {
+      await controller.initialize();
+    } catch (e) {
+      await controller.dispose();
+      if (!mounted) return;
       setState(() {
         _initFailed = true;
-        _initError =
-            '${_describeInitError(lastError, statusCode: lastStatus)}\n($lastError)';
+        _initError = '${_describeInitError(e)}\n($e)';
       });
+      return;
+    }
+    if (!mounted) {
+      await controller.dispose();
       return;
     }
     _videoController = controller;
 
     // 실시간 자막 컨트롤러 연결 후 즉시 재생. 자막은 재생을 따라 점진적으로 채워진다.
-    // 재생에 성공한 헤더 변형(activeHeaders)을 오디오 추출에도 그대로 사용해 일관성을 맞춘다.
     final settings = ref.read(settingsProvider).value;
     final live = ref.read(liveCaptionControllerFactory)((
       apiKey: apiKey,
-      videoPath: activeSource.path,
-      httpHeaders: activeHeaders,
+      videoPath: widget.source.path,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
     ));
@@ -189,40 +109,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await WakelockPlus.enable();
   }
 
-  /// 초기화 실패 원인별 안내 문구를 고른다. 프리플라이트로 [statusCode]를 얻었으면 그 코드를
-  /// 우선 반영하고, 없으면 마지막 예외 문자열로 403/형식/네트워크/일반을 추정한다.
-  String _describeInitError(Object? error, {int? statusCode}) {
-    if (statusCode != null) {
-      if (statusCode == 401 || statusCode == 403) {
-        return '영상 서버가 접근을 거부했어요($statusCode). 보호된 스트림일 수 있어요. '
-            '직접 영상 파일(.mp4) URL을 시도해 보세요.';
-      }
-      if (statusCode == 429) {
-        return '요청이 많아 일시적으로 거부됐어요(429). 잠시 후 다시 시도해 주세요.';
-      }
-      if (statusCode >= 500) {
-        return '영상 서버에 일시적 오류가 있어요($statusCode). 잠시 후 다시 시도해 주세요.';
-      }
-    }
+  /// 초기화 실패 원인별 안내 문구를 고른다(형식 미지원/일반).
+  String _describeInitError(Object? error) {
     final s = error?.toString().toLowerCase() ?? '';
-    if (s.contains('403') || s.contains('401') || s.contains('forbidden')) {
-      return '영상 서버가 접근을 거부했어요(403). 보호된 스트림일 수 있어요. '
-          '직접 영상 파일(.mp4) URL을 시도해 보세요.';
-    }
     if (s.contains('unrecognizedinputformat') ||
         s.contains('source error') ||
         s.contains('parsing')) {
-      return '이 영상 형식을 재생할 수 없어요. 직접 영상 파일(.mp4) URL을 시도해 보세요.';
+      return '이 영상 형식을 재생할 수 없어요. 다른 영상 파일을 선택해 보세요.';
     }
-    if (s.contains('timeout') ||
-        s.contains('timed out') ||
-        s.contains('unable to connect') ||
-        s.contains('failed host lookup') ||
-        s.contains('connection')) {
-      return '영상 서버에 연결하지 못했어요. 네트워크 상태를 확인해 주세요.';
-    }
-    return '영상을 재생할 수 없어요. 보호된 스트림이거나 지원하지 않는 형식일 수 있어요. '
-        '직접 영상 파일(.mp4) URL을 시도해 보세요.';
+    return '영상을 재생할 수 없어요. 지원하지 않는 형식이거나 파일이 손상됐을 수 있어요.';
   }
 
   /// 재생↔일시정지 전환 시: 재생하면 잠시 뒤 컨트롤 숨김 예약, 멈추면 컨트롤 표시.
@@ -302,7 +197,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
-    _probeClient.close();
     _videoController?.removeListener(_onVideoStateChanged);
     _live?.removeListener(_onLiveChanged);
     _live?.dispose();
@@ -313,9 +207,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     WakelockPlus.disable();
 
     // 영상 컨트롤러 정리 후 file_picker 캐시 사본 삭제(원본은 임시 디렉터리 밖이라 보호됨).
-    final localPath = widget.source.isNetwork ? null : widget.source.path;
+    final localPath = widget.source.path;
     _player.dispose().then((_) {
-      if (localPath != null) CacheCleaner.deleteIfTemp(localPath);
+      CacheCleaner.deleteIfTemp(localPath);
     });
     super.dispose();
   }
