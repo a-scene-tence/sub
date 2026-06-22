@@ -90,15 +90,22 @@ void main() {
       expect(h['User-Agent'], isNotNull);
       expect(h.containsKey('Referer'), isFalse);
     });
-    test('pageUrl이 다르면 Referer 포함', () {
+    test('pageUrl이 다르면 Referer + Origin 포함', () {
       final h = streamHeaders(
           mediaUrl: 'https://cdn/x.mp4', pageUrl: 'https://site/watch');
       expect(h['Referer'], 'https://site/watch');
+      expect(h['Origin'], 'https://site');
     });
-    test('pageUrl == mediaUrl이면 Referer 없음', () {
+    test('Origin은 포트가 있으면 포트까지 포함', () {
+      final h = streamHeaders(
+          mediaUrl: 'https://cdn/x.mp4', pageUrl: 'https://site:8443/watch');
+      expect(h['Origin'], 'https://site:8443');
+    });
+    test('pageUrl == mediaUrl이면 Referer/Origin 없음', () {
       final h = streamHeaders(
           mediaUrl: 'https://cdn/x.mp4', pageUrl: 'https://cdn/x.mp4');
       expect(h.containsKey('Referer'), isFalse);
+      expect(h.containsKey('Origin'), isFalse);
     });
   });
 

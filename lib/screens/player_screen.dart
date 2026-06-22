@@ -85,21 +85,37 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
 
     // 비디오 초기화: 후보(source + fallbacks)를 순서대로 시도해 처음 성공한 것을 쓴다.
-    final sources = <VideoSource>[widget.source, ...widget.fallbacks];
+    // 네트워크 후보는 헤더(UA·Referer·Origin)를 붙인 시도를 먼저, 실패하면 헤더 없이도
+    // 시도한다. 일부 서버는 헤더가 있어야(핫링크 보호) 통과하고, 일부는 헤더가 붙으면
+    // 오히려 거부하므로 양쪽을 모두 시도해 성공률을 높인다.
+    final attempts = <({VideoSource src, Map<String, String> headers})>[];
+    for (final src in <VideoSource>[widget.source, ...widget.fallbacks]) {
+      if (src.isNetwork) {
+        attempts.add((src: src, headers: src.httpHeaders));
+        if (src.httpHeaders.isNotEmpty) {
+          attempts.add((src: src, headers: const <String, String>{}));
+        }
+      } else {
+        attempts.add((src: src, headers: const <String, String>{}));
+      }
+    }
+
     VideoPlayerController? controller;
     VideoSource? activeSource;
+    Map<String, String> activeHeaders = const <String, String>{};
     Object? lastError;
-    for (final src in sources) {
-      final c = src.isNetwork
+    for (final a in attempts) {
+      final c = a.src.isNetwork
           ? VideoPlayerController.networkUrl(
-              Uri.parse(src.path),
-              httpHeaders: src.httpHeaders,
+              Uri.parse(a.src.path),
+              httpHeaders: a.headers,
             )
-          : VideoPlayerController.file(File(src.path));
+          : VideoPlayerController.file(File(a.src.path));
       try {
         await c.initialize();
         controller = c;
-        activeSource = src;
+        activeSource = a.src;
+        activeHeaders = a.headers;
         break;
       } catch (e) {
         lastError = e;
@@ -113,19 +129,19 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (controller == null || activeSource == null) {
       setState(() {
         _initFailed = true;
-        _initError = '영상을 재생할 수 없어요. 보호된 스트림이거나 지원하지 않는 형식일 수 '
-            '있어요. 직접 영상 파일(.mp4) URL을 시도해 보세요.\n($lastError)';
+        _initError = '${_describeInitError(lastError)}\n($lastError)';
       });
       return;
     }
     _videoController = controller;
 
     // 실시간 자막 컨트롤러 연결 후 즉시 재생. 자막은 재생을 따라 점진적으로 채워진다.
+    // 재생에 성공한 헤더 변형(activeHeaders)을 오디오 추출에도 그대로 사용해 일관성을 맞춘다.
     final settings = ref.read(settingsProvider).value;
     final live = ref.read(liveCaptionControllerFactory)((
       apiKey: apiKey,
       videoPath: activeSource.path,
-      httpHeaders: activeSource.httpHeaders,
+      httpHeaders: activeHeaders,
       targetLanguage: settings.targetLanguage,
       languageHint: settings.languageHint,
     ));
@@ -141,6 +157,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await controller.play();
     // 재생 중 화면 꺼짐 방지.
     await WakelockPlus.enable();
+  }
+
+  /// 초기화 실패 예외를 보고 원인별 안내 문구를 고른다. 모든 후보·헤더 변형을 시도한 뒤의
+  /// 마지막 예외를 받아 403(접근 거부)/형식/네트워크/일반으로 분기한다.
+  String _describeInitError(Object? error) {
+    final s = error?.toString().toLowerCase() ?? '';
+    if (s.contains('403') || s.contains('401') || s.contains('forbidden')) {
+      return '영상 서버가 접근을 거부했어요(403). 보호된 스트림일 수 있어요. '
+          '직접 영상 파일(.mp4) URL을 시도해 보세요.';
+    }
+    if (s.contains('unrecognizedinputformat') ||
+        s.contains('source error') ||
+        s.contains('parsing')) {
+      return '이 영상 형식을 재생할 수 없어요. 직접 영상 파일(.mp4) URL을 시도해 보세요.';
+    }
+    if (s.contains('timeout') ||
+        s.contains('timed out') ||
+        s.contains('unable to connect') ||
+        s.contains('failed host lookup') ||
+        s.contains('connection')) {
+      return '영상 서버에 연결하지 못했어요. 네트워크 상태를 확인해 주세요.';
+    }
+    return '영상을 재생할 수 없어요. 보호된 스트림이거나 지원하지 않는 형식일 수 있어요. '
+        '직접 영상 파일(.mp4) URL을 시도해 보세요.';
   }
 
   /// 재생↔일시정지 전환 시: 재생하면 잠시 뒤 컨트롤 숨김 예약, 멈추면 컨트롤 표시.
