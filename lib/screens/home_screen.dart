@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/diagnostics.dart';
+import '../theme/app_theme.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
 
-/// 시작 화면: 로컬 영상 파일을 선택한다.
+/// 시작 화면: 로컬 영상 파일을 선택한다(에디토리얼 표지 톤).
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -60,40 +61,100 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('영상 번역 자막'),
+        titleSpacing: 28,
+        title: Text(
+          'No.01',
+          style: textTheme.labelLarge?.copyWith(
+            color: AppPalette.inkSoft,
+            letterSpacing: 2,
+          ),
+        ),
         actions: <Widget>[
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings_outlined),
             tooltip: '설정',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
+          const SizedBox(width: 12),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 16, 24, 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                'VIDEO  ·  SUBTITLE',
+                style: textTheme.labelLarge?.copyWith(
+                  color: AppPalette.inkSoft,
+                  letterSpacing: 3,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '인프레임',
+                style: textTheme.displayLarge?.copyWith(
+                  fontSize: 60,
+                  height: 1.0,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(height: 1, color: AppPalette.hairline),
+              const SizedBox(height: 24),
+              Text(
+                '영상을 선택하면 음성을 인식해\n자연스러운 번역 자막을 만들어 드려요.',
+                style: textTheme.titleLarge?.copyWith(
+                  height: 1.45,
+                  color: AppPalette.ink,
+                ),
+              ),
+              const Spacer(),
+              _PickAction(onTap: _pickFile),
+              const SizedBox(height: 16),
+              Text(
+                '긴 영상도 지원합니다. 다만 영상이 길수록 인식·번역 처리 시간이 늘어납니다.',
+                style: textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 전체 폭 에디토리얼 액션 블록(라벨 좌측 + 화살표 우측).
+class _PickAction extends StatelessWidget {
+  const _PickAction({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: onTap,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            const SizedBox(height: 16),
-            const Text(
-              '영상을 선택하면 음성을 인식해 번역 자막을 만들어 드립니다.',
-              style: TextStyle(fontSize: 16),
+            Text(
+              '영상 파일 선택',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: AppPalette.paper,
+                    fontSize: 16,
+                  ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              '긴 영상도 지원합니다. 다만 영상이 길수록 인식·번역 처리 시간이 늘어납니다.',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              icon: const Icon(Icons.video_library),
-              label: const Text('영상 파일 선택'),
-              onPressed: _pickFile,
-            ),
+            const Icon(Icons.arrow_forward, size: 20),
           ],
         ),
       ),

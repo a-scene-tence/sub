@@ -223,11 +223,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      // 전체화면에서는 AppBar를 숨겨 영상이 화면을 가득 채운다.
+      // 전체화면에서는 AppBar를 숨겨 영상이 화면을 가득 채운다. 전역 테마는 밝은 페이퍼
+      // 톤이지만 플레이어는 영상 가독성을 위해 다크 chrome을 명시적으로 유지한다.
       appBar: _isFullscreen
           ? null
           : AppBar(
-              title: const Text('재생'),
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              title: const Text('재생', style: TextStyle(color: Colors.white)),
               actions: <Widget>[
                 IconButton(
                   icon: const Icon(Icons.settings),

@@ -12,6 +12,7 @@ void main() {
     );
 
     expect(find.text('영상 파일 선택'), findsOneWidget);
-    expect(find.byIcon(Icons.settings), findsOneWidget);
+    expect(find.text('인프레임'), findsOneWidget);
+    expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
   });
 }

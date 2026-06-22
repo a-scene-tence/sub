@@ -36,7 +36,8 @@ dependencies:
   volume_controller: ^2.0.7
   # 재생 중 화면 꺼짐 방지(전체화면/긴 영상)
   wakelock_plus: ^1.2.5
-  html: ^0.15.6
+  # 에디토리얼 타이포그래피(Noto Serif KR 헤드라인 / Noto Sans KR 본문)
+  google_fonts: ^6.2.1
 
 dev_dependencies:
   flutter_test:
