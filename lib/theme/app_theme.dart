@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// 에디토리얼(잡지/출판물) 톤의 라이트 "페이퍼" 팔레트.
+/// 라이트 "페이퍼" 팔레트 — 화이트·아이보리 모노크롬(포인트 색 없음).
 ///
-/// 모노크롬(잉크/페이퍼) 위에 절제된 포인트 1색(브릭)을 활성 상태에만 소량 쓴다.
+/// 색으로 강조하지 않고 여백·타이포·hairline으로 위계를 만든다. 활성 컨트롤도 잉크(검정)로만.
 class AppPalette {
   AppPalette._();
 
-  static const Color paper = Color(0xFFF4F1EA); // 웜 아이보리 배경
-  static const Color ink = Color(0xFF1C1B18); // 거의 검정(본문·헤드라인)
-  static const Color inkSoft = Color(0xFF726C5F); // 캡션·보조 텍스트
-  static const Color accent = Color(0xFF9C3B1B); // 브릭(포인트, 소량)
-  static const Color hairline = Color(0x241C1B18); // ink ~14%(구분선·밑줄)
+  static const Color paper = Color(0xFFFAF9F5); // near-white 아이보리 배경
+  static const Color ink = Color(0xFF1A1A1A); // 본문·헤드라인(부드러운 검정)
+  static const Color inkSoft = Color(0xFF8C8A85); // 캡션·보조 텍스트(중성 그레이)
+  static const Color hairline = Color(0x141A1A1A); // ink ~8%(구분선·밑줄)
+  static const Color line = Color(0x331A1A1A); // ink ~20%(보더)
 }
 
-/// 앱 전역 에디토리얼 테마. 헤드라인/타이틀은 Noto Serif KR, 본문은 Noto Sans KR.
+/// 앱 전역 테마. 전부 Noto Sans KR(올-산세리프), 굵은 무게 없이 라이트/레귤러/미디엄만 사용.
 class AppTheme {
   AppTheme._();
 
@@ -29,29 +29,30 @@ class AppTheme {
       onSurface: AppPalette.ink,
       primary: AppPalette.ink,
       onPrimary: AppPalette.paper,
-      secondary: AppPalette.accent,
+      secondary: AppPalette.ink,
     );
 
-    final serif = GoogleFonts.notoSerifKrTextTheme(base.textTheme);
     final sans = GoogleFonts.notoSansKrTextTheme(base.textTheme);
-    final textTheme = sans.copyWith(
-      displayLarge: serif.displayLarge
-          ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
-      displayMedium: serif.displayMedium
-          ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
-      displaySmall: serif.displaySmall
-          ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.4),
-      headlineMedium:
-          serif.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
-      headlineSmall:
-          serif.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-      titleLarge: serif.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-      bodyLarge: sans.bodyLarge?.copyWith(height: 1.5),
-      bodyMedium: sans.bodyMedium?.copyWith(height: 1.5),
-      bodySmall: sans.bodySmall?.copyWith(color: AppPalette.inkSoft, height: 1.45),
-      labelLarge:
-          sans.labelLarge?.copyWith(fontWeight: FontWeight.w600, letterSpacing: 0.4),
-    ).apply(bodyColor: AppPalette.ink, displayColor: AppPalette.ink);
+    final textTheme = sans
+        .copyWith(
+          displayLarge: sans.displayLarge
+              ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -1.0, height: 1.05),
+          displayMedium: sans.displayMedium
+              ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -0.8, height: 1.05),
+          displaySmall: sans.displaySmall
+              ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -0.5),
+          headlineMedium: sans.headlineMedium
+              ?.copyWith(fontWeight: FontWeight.w400, letterSpacing: -0.3),
+          headlineSmall: sans.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.w400, letterSpacing: -0.2),
+          titleLarge: sans.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+          bodyLarge: sans.bodyLarge?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
+          bodyMedium: sans.bodyMedium?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
+          bodySmall: sans.bodySmall?.copyWith(color: AppPalette.inkSoft, height: 1.5),
+          labelLarge: sans.labelLarge
+              ?.copyWith(fontWeight: FontWeight.w500, letterSpacing: 0.2),
+        )
+        .apply(bodyColor: AppPalette.ink, displayColor: AppPalette.ink);
 
     return base.copyWith(
       colorScheme: colorScheme,
@@ -69,34 +70,41 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.notoSerifKr(
+        titleTextStyle: GoogleFonts.notoSansKr(
           color: AppPalette.ink,
-          fontWeight: FontWeight.w700,
-          fontSize: 22,
+          fontWeight: FontWeight.w500,
+          fontSize: 18,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: AppPalette.ink,
           foregroundColor: AppPalette.paper,
+          elevation: 0,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(4)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
+          textStyle: GoogleFonts.notoSansKr(
+            fontWeight: FontWeight.w500,
+            fontSize: 15,
+            letterSpacing: 0.2,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppPalette.ink,
-          side: const BorderSide(color: AppPalette.ink, width: 1),
+          side: const BorderSide(color: AppPalette.line, width: 1),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(4)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          textStyle: GoogleFonts.notoSansKr(fontWeight: FontWeight.w500),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: AppPalette.accent),
+        style: TextButton.styleFrom(foregroundColor: AppPalette.ink),
       ),
       inputDecorationTheme: const InputDecorationTheme(
         border: UnderlineInputBorder(),
@@ -104,21 +112,21 @@ class AppTheme {
           borderSide: BorderSide(color: AppPalette.ink, width: 1.5),
         ),
         enabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: AppPalette.hairline, width: 1),
+          borderSide: BorderSide(color: AppPalette.line, width: 1),
         ),
         labelStyle: TextStyle(color: AppPalette.inkSoft),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? AppPalette.accent : null),
+            states.contains(WidgetState.selected) ? AppPalette.ink : null),
         trackColor: WidgetStateProperty.resolveWith((states) =>
             states.contains(WidgetState.selected)
-                ? AppPalette.accent.withValues(alpha: 0.35)
+                ? AppPalette.ink.withValues(alpha: 0.45)
                 : null),
       ),
       sliderTheme: const SliderThemeData(
-        activeTrackColor: AppPalette.accent,
-        thumbColor: AppPalette.accent,
+        activeTrackColor: AppPalette.ink,
+        thumbColor: AppPalette.ink,
         inactiveTrackColor: AppPalette.hairline,
       ),
     );

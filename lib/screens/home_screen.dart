@@ -66,13 +66,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 28,
-        title: Text(
-          'No.01',
-          style: textTheme.labelLarge?.copyWith(
-            color: AppPalette.inkSoft,
-            letterSpacing: 2,
-          ),
-        ),
         actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -87,34 +80,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 16, 24, 28),
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                'VIDEO  ·  SUBTITLE',
-                style: textTheme.labelLarge?.copyWith(
-                  color: AppPalette.inkSoft,
-                  letterSpacing: 3,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Text(
                 '인프레임',
                 style: textTheme.displayLarge?.copyWith(
-                  fontSize: 60,
+                  fontSize: 52,
                   height: 1.0,
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 22),
               Container(height: 1, color: AppPalette.hairline),
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
               Text(
                 '영상을 선택하면 음성을 인식해\n자연스러운 번역 자막을 만들어 드려요.',
                 style: textTheme.titleLarge?.copyWith(
-                  height: 1.45,
-                  color: AppPalette.ink,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
+                  color: AppPalette.inkSoft,
                 ),
               ),
               const Spacer(),
@@ -132,7 +118,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-/// 전체 폭 에디토리얼 액션 블록(라벨 좌측 + 화살표 우측).
+/// 전체 폭 액션 블록(라벨 좌측 + 화살표 우측).
 class _PickAction extends StatelessWidget {
   const _PickAction({required this.onTap});
 
@@ -144,17 +130,11 @@ class _PickAction extends StatelessWidget {
       width: double.infinity,
       child: FilledButton(
         onPressed: onTap,
-        child: Row(
+        child: const Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            Text(
-              '영상 파일 선택',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppPalette.paper,
-                    fontSize: 16,
-                  ),
-            ),
-            const Icon(Icons.arrow_forward, size: 20),
+            Text('영상 파일 선택'),
+            Icon(Icons.arrow_forward, size: 20),
           ],
         ),
       ),

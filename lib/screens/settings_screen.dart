@@ -95,19 +95,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: const EdgeInsets.fromLTRB(28, 12, 24, 48),
         children: <Widget>[
           const _SectionHeader(
-            '01',
             'API 키',
             caption: '음성 인식과 번역을 모두 Gemini로 처리합니다. Google AI Studio에서 '
                 '무료로 발급한 Gemini 키 하나만 넣으면 됩니다.',
           ),
           const SizedBox(height: 16),
           Text(
-            hasGeminiKey ? '· 키가 저장되어 있습니다.' : '· 키가 설정되지 않았습니다.',
+            hasGeminiKey ? '키가 저장되어 있습니다.' : '키가 설정되지 않았습니다.',
             style: TextStyle(
-              color: hasGeminiKey
-                  ? const Color(0xFF3F6B43)
-                  : AppPalette.accent,
-              fontWeight: FontWeight.w600,
+              color: hasGeminiKey ? AppPalette.ink : AppPalette.inkSoft,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 12),
@@ -134,7 +131,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             label: const Text('API 키 발급 방법'),
           ),
           const _SectionGap(),
-          const _SectionHeader('02', '언어'),
+          const _SectionHeader('언어'),
           const SizedBox(height: 12),
           Text('번역 대상 언어', style: _label(context)),
           DropdownButton<String>(
@@ -171,7 +168,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: settings.setLanguageHint,
           ),
           const _SectionGap(),
-          const _SectionHeader('03', '표시 옵션'),
+          const _SectionHeader('표시 옵션'),
           const SizedBox(height: 4),
           SwitchListTile(
             title: const Text('원문 함께 표시'),
@@ -187,7 +184,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
           ),
           const _SectionGap(),
-          const _SectionHeader('04', '자막 스타일'),
+          const _SectionHeader('자막 스타일'),
           const SizedBox(height: 16),
           _StylePreview(settings: current),
           const SizedBox(height: 20),
@@ -226,7 +223,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onChanged: settings.setSubtitleBgOpacity,
           ),
           const _SectionGap(),
-          const _SectionHeader('05', '저장공간'),
+          const _SectionHeader('저장공간'),
           const SizedBox(height: 12),
           Text(
             '캐시 사용량 — '
@@ -253,7 +250,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 /// 섹션 라벨(소제목) 텍스트 스타일.
 TextStyle? _label(BuildContext context) =>
     Theme.of(context).textTheme.bodyMedium?.copyWith(
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           color: AppPalette.ink,
         );
 
@@ -273,11 +270,10 @@ class _SectionGap extends StatelessWidget {
   }
 }
 
-/// 넘버 kicker + serif 섹션 제목(+선택 캡션).
+/// 섹션 제목(+선택 캡션). 산세리프 미디엄, 색 강조 없이 여백으로 구분.
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.number, this.title, {this.caption});
+  const _SectionHeader(this.title, {this.caption});
 
-  final String number;
   final String title;
   final String? caption;
 
@@ -287,23 +283,7 @@ class _SectionHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: <Widget>[
-            Text(
-              number,
-              style: textTheme.titleLarge?.copyWith(
-                color: AppPalette.accent,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(title, style: textTheme.headlineSmall),
-            ),
-          ],
-        ),
+        Text(title, style: textTheme.headlineSmall),
         if (caption != null) ...<Widget>[
           const SizedBox(height: 8),
           Text(caption!, style: textTheme.bodySmall),
