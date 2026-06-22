@@ -4,12 +4,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/subtitle_cue.dart';
 import '../providers.dart';
 import '../services/cache_cleaner.dart';
+import '../services/video_url_resolver.dart';
 import '../state/live_caption_controller.dart';
 import '../state/player_controller.dart';
 import '../state/settings_controller.dart';
@@ -52,6 +54,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
 
 class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   final PlayerController _player = PlayerController();
+  // 재생 전 미디어 URL 프리플라이트(403 조기 감지·리다이렉트 최종 URL)용 클라이언트.
+  final http.Client _probeClient = http.Client();
   LiveCaptionController? _live;
   VideoPlayerController? _videoController;
   bool _initFailed = false;
@@ -104,10 +108,35 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     VideoSource? activeSource;
     Map<String, String> activeHeaders = const <String, String>{};
     Object? lastError;
+    int? lastStatus; // 프리플라이트로 얻은 마지막 HTTP 상태(메시지에 우선 반영).
     for (final a in attempts) {
+      // 네트워크 후보는 재생 전 가볍게 프리플라이트해 403을 조기에 건너뛰고, 리다이렉트
+      // 최종 URL로 재생한다(베스트에포트: 프리플라이트 실패 시 원래 URL로 그대로 진행).
+      var playUrl = a.src.path;
+      if (a.src.isNetwork) {
+        try {
+          final probe = await probeMediaUrl(
+            a.src.path,
+            headers: a.headers,
+            client: _probeClient,
+            timeout: const Duration(seconds: 6),
+          );
+          if (probe.forbidden) {
+            lastStatus = probe.statusCode;
+            lastError = 'HTTP ${probe.statusCode}';
+            continue; // initialize를 기다리지 않고 다음 시도로.
+          }
+          if (probe.ok) {
+            lastStatus = probe.statusCode;
+            playUrl = probe.finalUrl; // 리다이렉트 최종 URL로 재생(헤더 유실 방지).
+          }
+        } catch (_) {
+          // 프리플라이트 실패는 무시하고 원래 URL로 초기화 시도.
+        }
+      }
       final c = a.src.isNetwork
           ? VideoPlayerController.networkUrl(
-              Uri.parse(a.src.path),
+              Uri.parse(playUrl),
               httpHeaders: a.headers,
             )
           : VideoPlayerController.file(File(a.src.path));
@@ -129,7 +158,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (controller == null || activeSource == null) {
       setState(() {
         _initFailed = true;
-        _initError = '${_describeInitError(lastError)}\n($lastError)';
+        _initError =
+            '${_describeInitError(lastError, statusCode: lastStatus)}\n($lastError)';
       });
       return;
     }
@@ -159,9 +189,21 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await WakelockPlus.enable();
   }
 
-  /// 초기화 실패 예외를 보고 원인별 안내 문구를 고른다. 모든 후보·헤더 변형을 시도한 뒤의
-  /// 마지막 예외를 받아 403(접근 거부)/형식/네트워크/일반으로 분기한다.
-  String _describeInitError(Object? error) {
+  /// 초기화 실패 원인별 안내 문구를 고른다. 프리플라이트로 [statusCode]를 얻었으면 그 코드를
+  /// 우선 반영하고, 없으면 마지막 예외 문자열로 403/형식/네트워크/일반을 추정한다.
+  String _describeInitError(Object? error, {int? statusCode}) {
+    if (statusCode != null) {
+      if (statusCode == 401 || statusCode == 403) {
+        return '영상 서버가 접근을 거부했어요($statusCode). 보호된 스트림일 수 있어요. '
+            '직접 영상 파일(.mp4) URL을 시도해 보세요.';
+      }
+      if (statusCode == 429) {
+        return '요청이 많아 일시적으로 거부됐어요(429). 잠시 후 다시 시도해 주세요.';
+      }
+      if (statusCode >= 500) {
+        return '영상 서버에 일시적 오류가 있어요($statusCode). 잠시 후 다시 시도해 주세요.';
+      }
+    }
     final s = error?.toString().toLowerCase() ?? '';
     if (s.contains('403') || s.contains('401') || s.contains('forbidden')) {
       return '영상 서버가 접근을 거부했어요(403). 보호된 스트림일 수 있어요. '
@@ -260,6 +302,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _probeClient.close();
     _videoController?.removeListener(_onVideoStateChanged);
     _live?.removeListener(_onLiveChanged);
     _live?.dispose();

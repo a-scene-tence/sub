@@ -82,6 +82,90 @@ void main() {
       expect(out.map((c) => c.url),
           contains('https://cdn.example/inline.mp4?x=1'));
     });
+
+    test('fragment만 다른 URL은 중복 제거(fragment 제거)', () {
+      const html = '<video src="https://cdn.example/a.mp4#t=10"></video>'
+          '<p>https://cdn.example/a.mp4</p>';
+      final out = parseVideoCandidates(html, base);
+      expect(out, hasLength(1));
+      expect(out.first.url, 'https://cdn.example/a.mp4'); // fragment 제거됨.
+    });
+
+    test('광고·트래커 호스트 후보는 제외', () {
+      const html = '<video src="https://cdn.example/real.mp4"></video>'
+          '<script>var a="https://ads.doubleclick.net/x.mp4";</script>';
+      final out = parseVideoCandidates(html, base);
+      expect(out.map((c) => c.url), <String>['https://cdn.example/real.mp4']);
+    });
+
+    test('동일 kind 내 명시적 선언이 정규식 폴백보다 우선', () {
+      const html =
+          '<video><source src="https://cdn.example/explicit.mp4" type="video/mp4">'
+          '</video><script>var u="https://cdn.example/inline.mp4";</script>';
+      final out = parseVideoCandidates(html, base);
+      expect(out.map((c) => c.url), <String>[
+        'https://cdn.example/explicit.mp4',
+        'https://cdn.example/inline.mp4',
+      ]);
+    });
+
+    test('후보 상한(20개)으로 정규식 폴백 폭주 제한', () {
+      final sb = StringBuffer();
+      for (var i = 0; i < 25; i++) {
+        sb.write('<script>var u="https://cdn.example/v$i.mp4";</script>');
+      }
+      final out = parseVideoCandidates(sb.toString(), base);
+      expect(out, hasLength(20));
+    });
+  });
+
+  group('probeMediaUrl', () {
+    test('200이면 ok + 최종 URL 반환', () async {
+      final probe = await probeMediaUrl(
+        'https://cdn.example/x.mp4',
+        client: MockClient((_) async => http.Response('', 200)),
+      );
+      expect(probe.ok, isTrue);
+      expect(probe.forbidden, isFalse);
+      expect(probe.statusCode, 200);
+      expect(probe.finalUrl, 'https://cdn.example/x.mp4');
+    });
+
+    test('403이면 forbidden', () async {
+      final probe = await probeMediaUrl(
+        'https://cdn.example/x.mp4',
+        client: MockClient((_) async => http.Response('', 403)),
+      );
+      expect(probe.forbidden, isTrue);
+      expect(probe.ok, isFalse);
+    });
+
+    test('HEAD가 405면 Range GET으로 폴백', () async {
+      String? rangeHeader;
+      final probe = await probeMediaUrl(
+        'https://cdn.example/x.mp4',
+        client: MockClient((req) async {
+          if (req.method == 'HEAD') return http.Response('', 405);
+          rangeHeader = req.headers['Range'];
+          return http.Response('ab', 206);
+        }),
+      );
+      expect(probe.statusCode, 206);
+      expect(probe.ok, isTrue);
+      expect(rangeHeader, 'bytes=0-1'); // GET 폴백 시 Range 헤더 전송.
+    });
+
+    test('HEAD가 예외를 던지면 Range GET으로 폴백', () async {
+      final probe = await probeMediaUrl(
+        'https://cdn.example/x.mp4',
+        client: MockClient((req) async {
+          if (req.method == 'HEAD') throw Exception('no head');
+          return http.Response('ab', 206);
+        }),
+      );
+      expect(probe.statusCode, 206);
+      expect(probe.ok, isTrue);
+    });
   });
 
   group('streamHeaders', () {
@@ -133,6 +217,17 @@ void main() {
       }));
       final out = await resolver.resolve('https://site.example/watch');
       expect(out.length, greaterThanOrEqualTo(2));
+    });
+
+    test('미디어 content-type 응답은 최종 URL로 1개 후보', () async {
+      final resolver = VideoUrlResolver(client: MockClient((_) async {
+        return http.Response('binarydata', 200,
+            headers: const <String, String>{'content-type': 'video/mp4'});
+      }));
+      final out = await resolver.resolve('https://site.example/redir');
+      expect(out, hasLength(1));
+      expect(out.first.url, 'https://site.example/redir');
+      expect(out.first.kind, VideoStreamKind.progressive);
     });
 
     test('비-http scheme는 거부', () async {

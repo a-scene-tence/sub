@@ -55,11 +55,13 @@ class VideoUrlResolver {
       throw ResolveException('페이지를 불러오지 못했습니다 (HTTP ${resp.statusCode}).');
     }
 
-    // 응답이 영상 자체면(리다이렉트된 미디어 등) 그대로 1개 후보로.
+    // 응답이 영상 자체면(리다이렉트된 미디어 등) 그대로 1개 후보로. 리다이렉트를 따라간
+    // 최종 URL을 후보로 써서 재생 시 헤더 유실/추가 리다이렉트를 줄인다.
     final contentType = (resp.headers['content-type'] ?? '').toLowerCase();
     if (_isMediaContentType(contentType)) {
+      final finalUrl = resp.request?.url.toString() ?? uri.toString();
       return <VideoCandidate>[
-        VideoCandidate(url: uri.toString(), kind: classifyStream(contentType)),
+        VideoCandidate(url: finalUrl, kind: classifyStream(contentType)),
       ];
     }
 
@@ -92,6 +94,69 @@ Map<String, String> streamHeaders({required String mediaUrl, String? pageUrl}) {
     }
   }
   return h;
+}
+
+/// 미디어 URL 프리플라이트 결과: 리다이렉트를 따라간 최종 URL과 HTTP 상태 코드.
+class MediaProbeResult {
+  const MediaProbeResult({
+    required this.finalUrl,
+    required this.statusCode,
+    this.contentType,
+  });
+
+  final String finalUrl;
+  final int statusCode;
+  final String? contentType;
+
+  /// 2xx·3xx면 접근 가능으로 본다(3xx는 클라이언트가 따라가지 못한 잔여 리다이렉트).
+  bool get ok => statusCode >= 200 && statusCode < 400;
+
+  /// 인증/접근 거부(핫링크 보호 등).
+  bool get forbidden => statusCode == 401 || statusCode == 403;
+}
+
+/// 재생 전에 미디어 URL을 가볍게 확인한다(베스트에포트). HEAD를 먼저 시도하고, 서버가
+/// HEAD를 막으면(405/501 또는 예외) `Range: bytes=0-1` GET으로 폴백한다. 리다이렉트를
+/// 따라간 최종 URL과 상태 코드를 돌려준다. 네트워크 오류는 호출자가 처리하도록 그대로 던진다.
+Future<MediaProbeResult> probeMediaUrl(
+  String url, {
+  Map<String, String> headers = const <String, String>{},
+  http.Client? client,
+  Duration timeout = const Duration(seconds: 8),
+}) async {
+  final bool ownClient = client == null;
+  final http.Client c = client ?? http.Client();
+  final Uri uri = Uri.parse(url);
+  try {
+    http.Response resp;
+    try {
+      resp = await c.head(uri, headers: headers).timeout(timeout);
+      if (resp.statusCode == 405 || resp.statusCode == 501) {
+        resp = await _rangeGet(c, uri, headers, timeout);
+      }
+    } on Exception {
+      // HEAD 자체가 막힌 서버 → Range GET으로 폴백(이마저 실패하면 호출자로 전파).
+      resp = await _rangeGet(c, uri, headers, timeout);
+    }
+    return MediaProbeResult(
+      finalUrl: resp.request?.url.toString() ?? url,
+      statusCode: resp.statusCode,
+      contentType: resp.headers['content-type'],
+    );
+  } finally {
+    if (ownClient) c.close();
+  }
+}
+
+Future<http.Response> _rangeGet(
+  http.Client c,
+  Uri uri,
+  Map<String, String> headers,
+  Duration timeout,
+) {
+  return c
+      .get(uri, headers: <String, String>{...headers, 'Range': 'bytes=0-1'})
+      .timeout(timeout);
 }
 
 bool _isHttp(Uri uri) => uri.scheme == 'http' || uri.scheme == 'https';
@@ -132,17 +197,27 @@ List<VideoCandidate> parseVideoCandidates(String html, Uri baseUri) {
   final poster = _absolute(_metaContent(doc, property: 'og:image'), baseUri);
 
   final seen = <String>{};
-  final out = <VideoCandidate>[];
+  // 후보를 출처 우선순위(priority)·삽입 순서(index)와 함께 모은다. List.sort가 안정 정렬이
+  // 아니므로 동일 kind/priority 내 순서는 index로 명시적으로 고정한다.
+  final entries = <({VideoCandidate candidate, int priority, int index})>[];
 
-  void add(String? raw, {String? mime}) {
+  // priority 0 = 명시적 선언(video/source/og/JSON-LD), 1 = 본문 정규식 폴백.
+  void add(String? raw, {String? mime, int priority = 0}) {
     final abs = _absolute(raw, baseUri);
     if (abs == null) return;
-    if (!seen.add(abs)) return;
-    out.add(VideoCandidate(
-      url: abs,
-      kind: classifyStream(mime ?? abs),
-      title: title,
-      poster: poster,
+    final normalized = _normalizeForDedup(abs);
+    if (normalized == null) return;
+    if (_isJunkHost(normalized)) return; // 광고·트래커 호스트 제외.
+    if (!seen.add(normalized)) return; // fragment 정규화 후 중복 제거.
+    entries.add((
+      candidate: VideoCandidate(
+        url: normalized,
+        kind: classifyStream(mime ?? normalized),
+        title: title,
+        poster: poster,
+      ),
+      priority: priority,
+      index: entries.length,
     ));
   }
 
@@ -169,17 +244,57 @@ List<VideoCandidate> parseVideoCandidates(String html, Uri baseUri) {
     _collectJsonLdContentUrls(node.text, add);
   }
 
-  // 본문 정규식 폴백: 따옴표/공백으로 끝나는 미디어 직링크.
+  // 본문 정규식 폴백: 따옴표/공백으로 끝나는 미디어 직링크(명시적 선언보다 후순위).
   final re = RegExp(
     r'''https?:\/\/[^\s"'<>\\]+\.(?:mp4|m3u8|webm|m4v|mov|mkv|mpd)(?:\?[^\s"'<>\\]*)?''',
     caseSensitive: false,
   );
   for (final m in re.allMatches(html)) {
-    add(m.group(0));
+    add(m.group(0), priority: 1);
   }
 
-  out.sort((a, b) => _kindRank(a.kind).compareTo(_kindRank(b.kind)));
-  return out;
+  // progressive > HLS/DASH > unknown, 동일 kind 내에서는 명시적 선언 우선, 그다음 발견 순서.
+  entries.sort((a, b) {
+    final byKind = _kindRank(a.candidate.kind).compareTo(_kindRank(b.candidate.kind));
+    if (byKind != 0) return byKind;
+    final byPriority = a.priority.compareTo(b.priority);
+    if (byPriority != 0) return byPriority;
+    return a.index.compareTo(b.index);
+  });
+
+  final out = entries.map((e) => e.candidate).toList();
+  // 정규식 폴백이 과하게 매치되는 페이지를 대비해 상한을 둔다.
+  return out.length > _maxCandidates ? out.sublist(0, _maxCandidates) : out;
+}
+
+/// 정규식 폴백 폭주를 막기 위한 후보 상한.
+const int _maxCandidates = 20;
+
+/// 명백한 광고·트래커 호스트(재생 불가). 오탐을 피해 소수만 유지한다.
+const List<String> _junkHosts = <String>[
+  'doubleclick.net',
+  'googlesyndication.com',
+  'google-analytics.com',
+  'googletagmanager.com',
+  'scorecardresearch.com',
+];
+
+/// dedup용 정규화: fragment를 제거한다(Dart Uri가 기본 포트는 파싱 시 정규화).
+/// http/https가 아니면 null.
+String? _normalizeForDedup(String absUrl) {
+  final uri = Uri.tryParse(absUrl);
+  if (uri == null || !_isHttp(uri)) return null;
+  return uri.removeFragment().toString();
+}
+
+/// 호스트가 [_junkHosts]에 속하면(서브도메인 포함) true.
+bool _isJunkHost(String url) {
+  final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+  if (host.isEmpty) return false;
+  for (final j in _junkHosts) {
+    if (host == j || host.endsWith('.$j')) return true;
+  }
+  return false;
 }
 
 int _kindRank(VideoStreamKind k) {
