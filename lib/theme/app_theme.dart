@@ -32,27 +32,33 @@ class AppTheme {
       secondary: AppPalette.ink,
     );
 
-    final sans = GoogleFonts.notoSansKrTextTheme(base.textTheme);
-    final textTheme = sans
+    // 라틴은 Inter, 한글 글리프는 Inter와 어울리는 IBM Plex Sans KR로 폴백.
+    final krFallback = <String>[GoogleFonts.ibmPlexSansKr().fontFamily!];
+    final inter = GoogleFonts.interTextTheme(base.textTheme);
+    final textTheme = inter
         .copyWith(
-          displayLarge: sans.displayLarge
+          displayLarge: inter.displayLarge
               ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -1.0, height: 1.05),
-          displayMedium: sans.displayMedium
+          displayMedium: inter.displayMedium
               ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -0.8, height: 1.05),
-          displaySmall: sans.displaySmall
+          displaySmall: inter.displaySmall
               ?.copyWith(fontWeight: FontWeight.w300, letterSpacing: -0.5),
-          headlineMedium: sans.headlineMedium
+          headlineMedium: inter.headlineMedium
               ?.copyWith(fontWeight: FontWeight.w400, letterSpacing: -0.3),
-          headlineSmall: sans.headlineSmall
+          headlineSmall: inter.headlineSmall
               ?.copyWith(fontWeight: FontWeight.w400, letterSpacing: -0.2),
-          titleLarge: sans.titleLarge?.copyWith(fontWeight: FontWeight.w500),
-          bodyLarge: sans.bodyLarge?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
-          bodyMedium: sans.bodyMedium?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
-          bodySmall: sans.bodySmall?.copyWith(color: AppPalette.inkSoft, height: 1.5),
-          labelLarge: sans.labelLarge
+          titleLarge: inter.titleLarge?.copyWith(fontWeight: FontWeight.w500),
+          bodyLarge: inter.bodyLarge?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
+          bodyMedium: inter.bodyMedium?.copyWith(fontWeight: FontWeight.w400, height: 1.55),
+          bodySmall: inter.bodySmall?.copyWith(color: AppPalette.inkSoft, height: 1.5),
+          labelLarge: inter.labelLarge
               ?.copyWith(fontWeight: FontWeight.w500, letterSpacing: 0.2),
         )
-        .apply(bodyColor: AppPalette.ink, displayColor: AppPalette.ink);
+        .apply(
+          bodyColor: AppPalette.ink,
+          displayColor: AppPalette.ink,
+          fontFamilyFallback: krFallback,
+        );
 
     return base.copyWith(
       colorScheme: colorScheme,
@@ -70,11 +76,11 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.notoSansKr(
+        titleTextStyle: GoogleFonts.inter(
           color: AppPalette.ink,
           fontWeight: FontWeight.w500,
           fontSize: 18,
-        ),
+        ).copyWith(fontFamilyFallback: krFallback),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -85,11 +91,11 @@ class AppTheme {
             borderRadius: BorderRadius.all(Radius.circular(4)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
-          textStyle: GoogleFonts.notoSansKr(
+          textStyle: GoogleFonts.inter(
             fontWeight: FontWeight.w500,
             fontSize: 15,
             letterSpacing: 0.2,
-          ),
+          ).copyWith(fontFamilyFallback: krFallback),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -100,7 +106,8 @@ class AppTheme {
             borderRadius: BorderRadius.all(Radius.circular(4)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: GoogleFonts.notoSansKr(fontWeight: FontWeight.w500),
+          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w500)
+              .copyWith(fontFamilyFallback: krFallback),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
