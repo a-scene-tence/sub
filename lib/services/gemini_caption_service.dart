@@ -8,8 +8,15 @@ import 'language_codes.dart';
 
 /// 캡션(전사+번역) 실패를 알리는 예외.
 class CaptionException implements Exception {
-  CaptionException(this.message);
+  CaptionException(this.message, {this.statusCode, this.retryAfter});
   final String message;
+
+  /// HTTP 상태 코드(있으면). 429면 호출자가 한도 초과로 백오프한다.
+  final int? statusCode;
+
+  /// 서버가 안내한 재시도 대기 시간(429의 Retry-After/RetryInfo, 있으면).
+  final Duration? retryAfter;
+
   @override
   String toString() => 'CaptionException: $message';
 }
@@ -96,10 +103,34 @@ class GeminiCaptionService implements CaptionSource {
 
     if (resp.statusCode != 200) {
       throw CaptionException(
-          'Gemini 캡션 실패 (HTTP ${resp.statusCode}): ${_errorMessage(resp.body)}');
+        'Gemini 캡션 실패 (HTTP ${resp.statusCode}): ${_errorMessage(resp.body)}',
+        statusCode: resp.statusCode,
+        retryAfter: _parseRetryAfter(resp),
+      );
     }
 
     return parseGeminiCaptionResponse(resp.body);
+  }
+
+  /// 429 등의 재시도 대기 시간을 찾는다. Retry-After 헤더 → 본문 RetryInfo.retryDelay
+  /// → 메시지의 "retry in Xs" 순으로 해석한다. 없으면 null.
+  Duration? _parseRetryAfter(http.Response resp) {
+    final header = resp.headers['retry-after'];
+    if (header != null) {
+      final secs = int.tryParse(header.trim());
+      if (secs != null) return Duration(seconds: secs);
+    }
+    final match = RegExp(r'retryDelay"?\s*:\s*"?([0-9.]+)s', caseSensitive: false)
+            .firstMatch(resp.body) ??
+        RegExp(r'retry in ([0-9.]+)s', caseSensitive: false)
+            .firstMatch(resp.body);
+    if (match != null) {
+      final secs = double.tryParse(match.group(1)!);
+      if (secs != null) {
+        return Duration(milliseconds: (secs * 1000).round());
+      }
+    }
+    return null;
   }
 
   /// 출력 토큰 상한: 오디오 길이에 대략 비례(폭주 비용 차단, 정상 자막은 안 잘림).

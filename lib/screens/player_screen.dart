@@ -40,6 +40,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   VideoPlayerController? _videoController;
   bool _initFailed = false;
   String? _initError;
+  String? _lastLiveError; // 직전에 스낵바로 띄운 실시간 자막 오류(중복 방지).
   bool _isFullscreen = false;
   double _videoScale = 1.0; // 핀치 줌(전체화면).
   Offset _videoOffset = Offset.zero; // 줌 상태 팬.
@@ -183,13 +184,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   void _onLiveChanged() {
     final state = _live?.value;
-    if (state != null &&
-        state.status == LiveStatus.error &&
-        state.errorMessage != null) {
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      messenger?.showSnackBar(
-        SnackBar(content: Text('실시간 자막 오류: ${state.errorMessage}')),
+    final errorMessage = state?.status == LiveStatus.error
+        ? state?.errorMessage
+        : null;
+    // 같은 오류로 스낵바를 반복해서 띄우지 않는다(백오프 중 중복 방지).
+    if (errorMessage != null && errorMessage != _lastLiveError) {
+      _lastLiveError = errorMessage;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('실시간 자막: $errorMessage')),
       );
+    } else if (errorMessage == null) {
+      _lastLiveError = null;
     }
     if (mounted) setState(() {});
   }

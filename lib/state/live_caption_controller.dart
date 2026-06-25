@@ -48,9 +48,11 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
     Duration? window,
     Duration? lookahead,
     Duration tick = const Duration(milliseconds: 500),
+    DateTime Function()? now,
   })  : _extractor = extractor,
         _caption = caption,
         _videoPath = videoPath,
+        _now = now ?? DateTime.now,
         _window = window ?? AppConfig.liveWindow,
         _lookahead = lookahead ?? AppConfig.liveLookahead,
         _tick = tick,
@@ -59,6 +61,7 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
   final AudioExtractor _extractor;
   final CaptionSource _caption;
   final String _videoPath;
+  final DateTime Function() _now;
   final String targetLanguage;
   final String? languageHint;
   final Duration _window;
@@ -74,6 +77,11 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
 
   bool _busy = false; // 단일 비행 가드(동시 추출 방지).
   bool _disposed = false;
+
+  /// 오류 시 다음 시도까지 쉬는 시점(백오프). 이 시각 전에는 새 윈도우를 처리하지 않는다.
+  /// 429(무료 한도 초과)에서 매 tick 재시도로 한도를 태우는 폭주를 막는다.
+  DateTime? _retryAfter;
+  int _errorStreak = 0; // 연속 실패 횟수(지수 백오프용).
 
   /// 이미 인식·번역을 마친 frontier(영상 시각). 여기서부터 다음 윈도우를 만든다.
   Duration _processedEnd = Duration.zero;
@@ -114,6 +122,8 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
   /// 재생 위치로 점프시키는 부수효과가 있다(건너뛴 구간은 인식하지 않음).
   ({Duration start, Duration end})? _planNext() {
     if (!enabled || _busy) return null;
+    // 오류 백오프 중에는 새 윈도우를 만들지 않는다(429 한도 폭주 방지).
+    if (_retryAfter != null && _now().isBefore(_retryAfter!)) return null;
     final v = _video;
     if (v == null || !v.value.isInitialized || !v.value.isPlaying) return null;
 
@@ -153,15 +163,43 @@ class LiveCaptionController extends ValueNotifier<LiveCaptionState> {
         _player?.updateCues(List<SubtitleCue>.of(_cues));
       }
       _processedEnd = end; // 무음이어도 frontier 전진(같은 구간 재호출 방지).
+      _errorStreak = 0;
+      _retryAfter = null;
       _setStatus(LiveStatus.idle);
     } catch (e) {
       await Diagnostics.record('live: 윈도우 처리 실패: $e');
-      // frontier 유지 → 다음 tick에서 같은 구간 재시도.
-      _setStatus(LiveStatus.error, message: e.toString());
+      // frontier 유지 → 백오프 후 같은 구간 재시도. 429(한도 초과)는 서버가 안내한
+      // 대기 시간을 존중해 매 tick 재시도로 한도를 태우는 폭주를 막는다.
+      _errorStreak++;
+      final wait = _backoffFor(e);
+      _retryAfter = _now().add(wait);
+      _setStatus(LiveStatus.error, message: _friendlyError(e, wait));
     } finally {
       if (wav != null) await _extractor.cleanup(wav);
       _busy = false;
     }
+  }
+
+  /// 실패 종류에 따른 다음 시도까지의 대기. 429(한도 초과)는 서버 안내 시간(없으면 30초)을,
+  /// 그 외 일시적 오류는 2,4,8,…초 지수 백오프(최대 30초)를 쓴다.
+  Duration _backoffFor(Object e) {
+    if (e is CaptionException && e.statusCode == 429) {
+      final base = e.retryAfter ?? const Duration(seconds: 30);
+      final capped =
+          base > const Duration(seconds: 120) ? const Duration(seconds: 120) : base;
+      return capped + const Duration(seconds: 1); // 약간의 버퍼.
+    }
+    final secs = (1 << _errorStreak).clamp(2, 30);
+    return Duration(seconds: secs);
+  }
+
+  /// 사용자에게 보일 오류 메시지. 429는 영어 원문 대신 친절한 안내로 바꾼다.
+  String _friendlyError(Object e, Duration wait) {
+    if (e is CaptionException && e.statusCode == 429) {
+      return '무료 사용량 한도를 초과했어요(분당 요청 제한). '
+          '약 ${wait.inSeconds}초 후 자동으로 다시 시도해요.';
+    }
+    return e.toString();
   }
 
   /// 새 큐를 누적 목록에 병합한다. 윈도우 경계의 pre-roll 중복을 막기 위해 윈도우

@@ -85,6 +85,7 @@ void main() {
     _FakeCaptionSource caption, {
     Duration window = const Duration(seconds: 10),
     Duration lookahead = const Duration(seconds: 5),
+    DateTime Function()? now,
   }) =>
       LiveCaptionController(
         extractor: extractor,
@@ -93,6 +94,7 @@ void main() {
         targetLanguage: 'ko',
         window: window,
         lookahead: lookahead,
+        now: now,
       );
 
   test('연속 윈도우: frontier 전진 + 큐 시각 오프셋 보정', () async {
@@ -246,6 +248,39 @@ void main() {
     expect(controller.value.status, LiveStatus.error);
     expect(controller.processedEnd, Duration.zero); // 전진하지 않음 → 재시도.
     expect(extractor.cleanups, 1); // 임시파일 정리됨.
+  });
+
+  test('429 한도 초과: 백오프 동안 재시도 안 함, 시간 지나면 재개', () async {
+    var clock = DateTime(2020);
+    final extractor = _RecordingExtractor(tmp);
+    final caption = _FakeCaptionSource(
+        error: CaptionException('quota',
+            statusCode: 429, retryAfter: const Duration(seconds: 30)));
+    final controller =
+        makeController(extractor, caption, now: () => clock)..enabled = true;
+    final video = _MockVideo();
+    final player = PlayerController();
+    controller.bindForTest(video, player);
+    addTearDown(() {
+      controller.dispose();
+      player.dispose();
+    });
+
+    when(() => video.value).thenReturn(videoValue(Duration.zero));
+    await controller.stepOnce(); // 1회 시도 → 429 → 백오프 설정.
+    expect(controller.value.status, LiveStatus.error);
+    expect(extractor.requests.length, 1);
+
+    // 백오프 동안(같은 시각)에는 추가 추출/호출 없음.
+    await controller.stepOnce();
+    expect(extractor.requests.length, 1);
+
+    // 대기 시간이 지나고 정상화되면 재개.
+    clock = clock.add(const Duration(seconds: 32));
+    caption.error = null;
+    await controller.stepOnce();
+    expect(extractor.requests.length, 2);
+    expect(controller.value.status, LiveStatus.idle);
   });
 
   test('병합 결과는 정렬·비중첩 불변식을 만족(SubtitleSyncEngine 구성)', () async {
